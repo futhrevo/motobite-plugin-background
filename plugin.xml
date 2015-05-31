@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<plugin xmlns="http://apache.org/cordova/ns/plugins/1.0" xmlns:android="http://schemas.android.com/apk/res/android" 
+	id="cordova-plugin-motobite-location" version="0.0.2">
+	<name>MBGPS</name>
+	<description>A service for tracking users in background</description>
+	<license>Apache 2.0</license>
+	<keywords>cordova,motobite</keywords>
+	<author>Rakesh Kalyankar</author>
+	<engines>
+        <engine name="cordova" version=">=3.0.0" />
+    </engines>
+	<js-module src="www/BackgroundGeoLocation.js" name="BackgroundGeoLocation">
+            <clobbers target="motobite.location" />
+     </js-module>
+	  <!-- android -->
+	 <platform name="android">
+		 <source-file src="src/android/GPStracker.java" target-dir="src/com/reku/motobite/cordova" />
+		 <source-file src="src/android/GPStrackerHelper.java" target-dir="src/com/reku/motobite/cordova" />
+		 <source-file src="src/android/Constants.java" target-dir="src/com/reku/motobite/cordova" />
+		 <source-file src="src/android/DetectedActivitiesIntentService.java" target-dir="src/com/reku/motobite/cordova" />
+		 <source-file src="src/android/libs/Android-DDP.jar" target-dir="libs" />
+		 
+		 <config-file target="AndroidManifest.xml" parent="/manifest/application">
+            <service android:name="com.reku.motobite.cordova.GPStracker" android:enabled="true" android:process=":remote" />
+			<service android:name="com.reku.motobite.cordova.DetectedActivitiesIntentService" android:process=":remote" android:exported="false" />
+        </config-file>
+		
+		<config-file target="AndroidManifest.xml" parent="/manifest">
+			<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+            <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+            <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+            <uses-permission android:name="android.permission.ACCESS_LOCATION_EXTRA_COMMANDS" />
+            <uses-permission android:name="android.permission.INTERNET" />
+			<uses-permission android:name="com.google.android.gms.permission.ACTIVITY_RECOGNITION" />
+		</config-file>
+		
+		<config-file target="res/xml/config.xml" parent="/*">
+			<feature name="BackgroundGeoLocation">
+				<param name="android-package" value="com.reku.motobite.cordova.GPStrackerHelper"/>
+			</feature>
+		</config-file>
+		<source-file src="src/android/build-extras.gradle" target-dir="." />
+	 </platform>
+</plugin>

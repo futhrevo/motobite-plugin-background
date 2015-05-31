@@ -1,0 +1,5 @@
+// Apply project's build-extras.gradle
+dependencies {
+	compile 'com.google.android.gms:play-services-location:7.5.0'
+	compile files('libs/Android-DDP.jar')
+}
