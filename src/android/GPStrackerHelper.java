@@ -15,6 +15,9 @@ public class GPStrackerHelper extends CordovaPlugin{
 
     public static final String ACTION_START = "start";
     public static final String ACTION_STOP = "stop";
+    public static final String ACTION_CONFIGURE = "configure";
+
+    private String userId;
     private Intent updateServiceIntent;
     private boolean isEnabled = false;
     private String stopOnTerminate = "false";
@@ -34,6 +37,13 @@ public class GPStrackerHelper extends CordovaPlugin{
             isEnabled = false;
             result = true;
             executeStop(callbackContext);
+        } else if(ACTION_CONFIGURE.equalsIgnoreCase(action)){
+            result =true;
+            try {
+                this.userId = data.getString(0);
+            } catch (JSONException e){
+                callbackContext.error("authToken/url required as parameters: " + e.getMessage());
+            }
         }
 
 
@@ -51,6 +61,7 @@ public class GPStrackerHelper extends CordovaPlugin{
         Log.d(TAG, "Google Play services init");
         final Activity activity = this.cordova.getActivity();
         final Intent intent = new Intent(activity, GPStracker.class);
+        intent.putExtra("userId",userId);
         cordova.getActivity().runOnUiThread(new Runnable() {
             @Override
             public void run() {

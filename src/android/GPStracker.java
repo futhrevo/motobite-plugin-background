@@ -48,6 +48,7 @@ public class GPStracker extends Service implements ConnectionCallbacks, OnConnec
     private GoogleApiClient mGoogleApiClient;
     private NotificationManager notifyManager;
     private Location mCurrentLocation;
+    private String user = "tester1";
 
     /**
      * A receiver for DetectedActivity objects broadcast by the
@@ -84,7 +85,7 @@ public class GPStracker extends Service implements ConnectionCallbacks, OnConnec
         mBroadcastReceiver = new ActivityDetectionBroadcastReceiver();
 
         // create a new instance (protocol version in second parameter is optional)
-        mMeteor = new Meteor(this, "ws://192.168.2.6:3000/websocket");
+        mMeteor = new Meteor(this, "ws://192.168.2.12:3000/websocket");
 
         // register the callback that will handle events and receive messages
         mMeteor.setCallback(this);
@@ -95,6 +96,8 @@ public class GPStracker extends Service implements ConnectionCallbacks, OnConnec
         Log.i(TAG, "Received start id " + startId + ": " + intent);
         // Register the broadcast receiver that informs this activity of the DetectedActivity
         // object broadcast sent by the intent service.
+        user = intent.getStringExtra("userId");
+        Log.i(TAG, "- user: " + user);
         LocalBroadcastManager.getInstance(this).registerReceiver(mBroadcastReceiver,
                 new IntentFilter(Constants.BROADCAST_ACTION));
         return START_STICKY;
