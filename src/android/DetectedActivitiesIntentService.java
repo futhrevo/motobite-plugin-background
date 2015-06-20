@@ -17,7 +17,7 @@ import java.util.ArrayList;
  *  {@link com.reku.motobite.cordova.GPStracker#requestActivityUpdates}.
  */
 public class DetectedActivitiesIntentService extends IntentService{
-    protected static final String TAG = "DetectedActivitiesIntentService";
+    protected static final String TAG = DetectedActivitiesIntentService.class.getSimpleName();
 
     /**
      * This constructor is required, and calls the super IntentService(String)
@@ -61,6 +61,7 @@ public class DetectedActivitiesIntentService extends IntentService{
 
             // Broadcast the list of detected activities.
             localIntent.putExtra(Constants.ACTIVITY_EXTRA, detectedActivities);
+            localIntent.putExtra(Constants.ACTIVITY_PROBABLE, mostProbableActivity);
             LocalBroadcastManager.getInstance(this).sendBroadcast(localIntent);
         }
     }

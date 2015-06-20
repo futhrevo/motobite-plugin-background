@@ -1,4 +1,4 @@
-cordova.define("cordova-plugin-motobite-location.BackgroundGeoLocation", function(require, exports, module) { var exec = require('cordova/exec');
+var exec = require('cordova/exec');
 
 module.exports = {
 	config: {},
@@ -27,4 +27,4 @@ module.exports = {
                 [user]);
         },
 }
-});
+;

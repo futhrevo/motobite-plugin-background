@@ -11,7 +11,7 @@ import org.json.JSONArray;
 import org.json.JSONException;
 
 public class GPStrackerHelper extends CordovaPlugin{
-    private static final String TAG = "GPStrackerHelper";
+    private static final String TAG = GPStrackerHelper.class.getSimpleName();
 
     public static final String ACTION_START = "start";
     public static final String ACTION_STOP = "stop";

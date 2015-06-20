@@ -7,6 +7,7 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.IntentSender;
 import android.content.SharedPreferences;
 import android.location.Location;
 import android.os.Bundle;
@@ -44,7 +45,7 @@ import im.delight.android.ddp.ResultListener;
  */
 public class GPStracker extends Service implements ConnectionCallbacks, OnConnectionFailedListener, LocationListener, ResultCallback<Status>, MeteorCallback {
     //TODO: Implement location listener provider method to know the status of gps provider
-    private static final String TAG = "GPStracker";
+    private static final String TAG = GPStracker.class.getSimpleName();
     private GoogleApiClient mGoogleApiClient;
     private NotificationManager notifyManager;
     private Location mCurrentLocation;
@@ -63,10 +64,15 @@ public class GPStracker extends Service implements ConnectionCallbacks, OnConnec
     These settings are the same as the settings for the map. They will in fact give you updates
     at the maximal rates currently possible.
     */
-    private static final LocationRequest REQUEST = LocationRequest.create()
+    private static final LocationRequest REQUESTHIGH = LocationRequest.create()
             .setInterval(Constants.UPDATE_INTERVAL_IN_MILLISECONDS)
             .setFastestInterval(Constants.FASTEST_UPDATE_INTERVAL_IN_MILLISECONDS)
             .setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY);
+
+    private static final LocationRequest REQUESTLOW = LocationRequest.create()
+            .setInterval(Constants.UPDATE_INTERVAL_IN_MILLISECONDS)
+            .setFastestInterval(Constants.FASTEST_UPDATE_INTERVAL_IN_MILLISECONDS)
+            .setPriority(LocationRequest.PRIORITY_BALANCED_POWER_ACCURACY);
     private LocationSettingsRequest.Builder builder;
     private Meteor mMeteor;
     public IBinder onBind(Intent intent) {
@@ -78,17 +84,11 @@ public class GPStracker extends Service implements ConnectionCallbacks, OnConnec
     public void onCreate(){
         super.onCreate();
         Log.i(TAG, "OnCreate");
-        buildGoogleApiClient();
-        //We want this service to continue running until it is explicitly stopped
-        mGoogleApiClient.connect();
+        new ConnectThread().start();
+
         // Get a receiver for broadcasts from ActivityDetectionIntentService.
         mBroadcastReceiver = new ActivityDetectionBroadcastReceiver();
 
-        // create a new instance (protocol version in second parameter is optional)
-        mMeteor = new Meteor(this, "ws://192.168.2.12:3000/websocket");
-
-        // register the callback that will handle events and receive messages
-        mMeteor.setCallback(this);
     }
 
     @Override
@@ -102,14 +102,7 @@ public class GPStracker extends Service implements ConnectionCallbacks, OnConnec
                 new IntentFilter(Constants.BROADCAST_ACTION));
         return START_STICKY;
     }
-    protected synchronized void buildGoogleApiClient(){
-        mGoogleApiClient = new GoogleApiClient.Builder(this)
-                .addConnectionCallbacks(this)
-                .addOnConnectionFailedListener(this)
-                .addApi(LocationServices.API)
-                .addApi(ActivityRecognition.API)
-                .build();
-    }
+
 
     @Override
     public boolean stopService(Intent intent) {
@@ -122,7 +115,8 @@ public class GPStracker extends Service implements ConnectionCallbacks, OnConnec
         /**
          * Notifying user to turn on location services, continue otherwise
          */
-        builder = new LocationSettingsRequest.Builder().addLocationRequest(REQUEST);
+        builder = new LocationSettingsRequest.Builder().addLocationRequest(REQUESTHIGH);
+        builder.setAlwaysShow(true);
         PendingResult<LocationSettingsResult> result =
                 LocationServices.SettingsApi.checkLocationSettings(mGoogleApiClient, builder.build());
 
@@ -140,13 +134,14 @@ public class GPStracker extends Service implements ConnectionCallbacks, OnConnec
                         Log.i(TAG, msg);
                         break;
                     case LocationSettingsStatusCodes.RESOLUTION_REQUIRED:
+                        // Location settings are not satisfied. If getActivity is available it could be fixed by showing the user a dialog
                         showNotification();
                         break;
                 }
             }
         });
 
-        LocationServices.FusedLocationApi.requestLocationUpdates(mGoogleApiClient, REQUEST, this);  // LocationListener
+        LocationServices.FusedLocationApi.requestLocationUpdates(mGoogleApiClient, REQUESTHIGH, this);  // LocationListener
         requestActivityUpdates();
 
     }
@@ -394,16 +389,65 @@ public class GPStracker extends Service implements ConnectionCallbacks, OnConnec
      * the device.
      */
     private class ActivityDetectionBroadcastReceiver extends BroadcastReceiver{
-        protected static final String TAG = "activity-detection-response-receiver";
+        protected static final String TAG = "BroadcastResponseRecvr";
         @Override
         public void onReceive(Context context, Intent intent) {
             Log.i(TAG,"Broadcast received");
             ArrayList<DetectedActivity> updatedActivities =
                     intent.getParcelableArrayListExtra(Constants.ACTIVITY_EXTRA);
+            DetectedActivity mostProable = intent.getParcelableExtra(Constants.ACTIVITY_PROBABLE);
             updateDetectedActivitiesList(updatedActivities);
+            updateLocationMode(mostProable);
         }
 
 
+    }
+
+    private void updateLocationMode(DetectedActivity proable) {
+        Log.i(TAG, String.valueOf(proable));
+        if(proable.getConfidence() > 60){
+            switch (proable.getType()){
+                case DetectedActivity.STILL:
+                    LocationServices.FusedLocationApi.requestLocationUpdates(mGoogleApiClient, REQUESTLOW, this);  // LocationListener
+                    break;
+                default:
+                    LocationServices.FusedLocationApi.requestLocationUpdates(mGoogleApiClient, REQUESTHIGH, this);  // LocationListener
+                    break;
+            }
+        }
+
+    }
+
+    /**
+     * GoogleApiClient thread for connection to a GoogleApiClient#blockingConnect
+     * moves into a separate thread because UI can not be blocked .
+     */
+    private class ConnectThread extends Thread{
+        protected synchronized void buildGoogleApiClient(){
+            mGoogleApiClient = new GoogleApiClient.Builder(getApplicationContext())
+                    .addConnectionCallbacks(GPStracker.this)
+                    .addOnConnectionFailedListener(GPStracker.this)
+                    .addApi(LocationServices.API)
+                    .addApi(ActivityRecognition.API)
+                    .build();
+        }
+        @Override
+        public void run() {
+            buildGoogleApiClient();
+            //We want this service to continue running until it is explicitly stopped
+            mGoogleApiClient.blockingConnect();
+            if(mGoogleApiClient.isConnected()){
+                Log.d("GoogleApiClientConnectService","client is Connected");
+            }else{
+                Log.d("GoogleApiClientConnectService","client is not Connected!!");
+            }
+
+            // create a new instance (protocol version in second parameter is optional)
+            mMeteor = new Meteor(GPStracker.this, "ws://192.168.1.156:3000/websocket");
+
+            // register the callback that will handle events and receive messages
+            mMeteor.setCallback(GPStracker.this);
+        }
     }
 }
 

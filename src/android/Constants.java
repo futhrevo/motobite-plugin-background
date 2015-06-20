@@ -17,6 +17,7 @@ public final class Constants {
     public static final String PACKAGE_NAME = "com.reku.motobite.cordova";
     public static final String BROADCAST_ACTION = PACKAGE_NAME + ".BROADCAST_ACTION";
     public static final String ACTIVITY_EXTRA = PACKAGE_NAME + ".ACTIVITY_EXTRA";
+    public static final String ACTIVITY_PROBABLE = PACKAGE_NAME + ".ACTIVITY_PROBABLE";
     public static final String SHARED_PREFERENCES_NAME = PACKAGE_NAME + ".SHARED_PREFERENCES";
     public static final String ACTIVITY_UPDATES_REQUESTED_KEY = PACKAGE_NAME + ".ACTIVITY_UPDATES_REQUESTED";
     /**
