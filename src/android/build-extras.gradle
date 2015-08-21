@@ -6,3 +6,10 @@ dependencies {
 	compile files('libs/jackson-core-asl-1.9.7.jar')
 	compile files('libs/jackson-mapper-asl-1.9.7.jar')
 }
+android {
+	packagingOptions {
+        exclude 'META-INF/ASL2.0'
+        exclude 'META-INF/LICENSE'
+        exclude 'META-INF/NOTICE'
+    }
+}
