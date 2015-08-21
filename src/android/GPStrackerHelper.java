@@ -2,6 +2,7 @@ package com.reku.motobite.cordova;
 
 
 import android.app.Activity;
+import android.app.PendingIntent;
 import android.content.Intent;
 import android.util.Log;
 
@@ -21,6 +22,7 @@ public class GPStrackerHelper extends CordovaPlugin{
     private Intent updateServiceIntent;
     private boolean isEnabled = false;
     private String stopOnTerminate = "false";
+    private PendingIntent pendingIntent = null;
 
     public boolean execute(String action, JSONArray data, CallbackContext callbackContext) throws JSONException{
         Activity activity = this.cordova.getActivity();
@@ -50,6 +52,12 @@ public class GPStrackerHelper extends CordovaPlugin{
         return result;
     }
 
+    @Override
+    public void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+
+    }
+
     public void onDestroy(){
         Activity activity = this.cordova.getActivity();
         if(isEnabled && stopOnTerminate.equalsIgnoreCase("true")) {
@@ -60,13 +68,12 @@ public class GPStrackerHelper extends CordovaPlugin{
     private void executeInit(final CallbackContext callbackContext){
         Log.d(TAG, "Google Play services init");
         final Activity activity = this.cordova.getActivity();
-        final Intent intent = new Intent(activity, GPStracker.class);
-        intent.putExtra("userId",userId);
+        updateServiceIntent.putExtra("userId",this.userId);
         cordova.getActivity().runOnUiThread(new Runnable() {
             @Override
             public void run() {
 
-                activity.startService(intent);
+                activity.startService(updateServiceIntent);
                 callbackContext.success();
             }
         });
@@ -75,11 +82,10 @@ public class GPStrackerHelper extends CordovaPlugin{
     private void executeStop(final CallbackContext callbackContext){
         Log.d(TAG, "Google Play services getting stopped");
         final Activity activity = this.cordova.getActivity();
-        final Intent intent = new Intent(activity, GPStracker.class);
         cordova.getActivity().runOnUiThread(new Runnable() {
             @Override
             public void run() {
-                activity.stopService(intent);
+                activity.stopService(updateServiceIntent);
                 callbackContext.success();
             }
         });

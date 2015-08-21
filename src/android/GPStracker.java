@@ -1,5 +1,6 @@
 package com.reku.motobite.cordova;
 
+import android.annotation.SuppressLint;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
@@ -7,7 +8,6 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
-import android.content.IntentSender;
 import android.content.SharedPreferences;
 import android.location.Location;
 import android.os.Bundle;
@@ -16,6 +16,7 @@ import android.provider.Settings;
 import android.support.v4.app.NotificationCompat;
 import android.support.v4.content.LocalBroadcastManager;
 import android.util.Log;
+import android.widget.Toast;
 
 import com.google.android.gms.common.ConnectionResult;
 import com.google.android.gms.common.api.GoogleApiClient;
@@ -26,6 +27,8 @@ import com.google.android.gms.common.api.ResultCallback;
 import com.google.android.gms.common.api.Status;
 import com.google.android.gms.location.ActivityRecognition;
 import com.google.android.gms.location.DetectedActivity;
+import com.google.android.gms.location.Geofence;
+import com.google.android.gms.location.GeofencingRequest;
 import com.google.android.gms.location.LocationListener;
 import com.google.android.gms.location.LocationRequest;
 import com.google.android.gms.location.LocationServices;
@@ -34,7 +37,12 @@ import com.google.android.gms.location.LocationSettingsResult;
 import com.google.android.gms.location.LocationSettingsStates;
 import com.google.android.gms.location.LocationSettingsStatusCodes;
 
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
 import java.util.ArrayList;
+import java.util.HashMap;
 
 import im.delight.android.ddp.Meteor;
 import im.delight.android.ddp.MeteorCallback;
@@ -51,6 +59,18 @@ public class GPStracker extends Service implements ConnectionCallbacks, OnConnec
     private Location mCurrentLocation;
     private String user = "tester1";
 
+    /**
+     * The list of geofences used in this sample
+     */
+    protected ArrayList<Geofence> mGeofenceList;
+    /**
+     * Used to keep track of whether geofences were added
+     */
+    private boolean mGeofencesAdded;
+    /**
+     * Used when requesting to add or remove geofences
+     */
+    private PendingIntent mGeofencePendingIntent;
     /**
      * A receiver for DetectedActivity objects broadcast by the
      * {@code ActivityDetectionIntentService}.
@@ -83,6 +103,18 @@ public class GPStracker extends Service implements ConnectionCallbacks, OnConnec
     @Override
     public void onCreate(){
         super.onCreate();
+        // Empty list for storing geofences.
+        mGeofenceList = new ArrayList<Geofence>();
+        // Initially set the PendingIntent used in addGeofences() and removeGeofences() to null
+        mGeofencePendingIntent = null;
+        // Retrieve an instance of SharedPreferences object
+        getSharedPreferencesInstance();
+        // Get the value of mGeofencesAdded
+        mGeofencesAdded = getSharedPreferencesInstance().getBoolean(Constants.GEOFENCES_ADDED_KEY,false);
+        // Get an instance of the Notification Manager
+        if(notifyManager == null){
+            notifyManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+        }
         Log.i(TAG, "OnCreate");
         new ConnectThread().start();
 
@@ -144,6 +176,17 @@ public class GPStracker extends Service implements ConnectionCallbacks, OnConnec
         LocationServices.FusedLocationApi.requestLocationUpdates(mGoogleApiClient, REQUESTHIGH, this);  // LocationListener
         requestActivityUpdates();
 
+        try{
+            LocationServices.GeofencingApi.addGeofences(mGoogleApiClient,
+                    getGeofencingRequest(buildGeofenceObject("Home", 14.6750928, 77.5920952)),
+                    getGeofencePendingIntent()).setResultCallback(new fenceResults());
+            LocationServices.GeofencingApi.addGeofences(mGoogleApiClient,
+                    getGeofencingRequest(buildGeofenceObject("ATP", 14.6750928, 77.5920952)),
+                    getGeofencePendingIntent()).setResultCallback(new fenceResults());
+        }catch (SecurityException securityException){
+            // Catch exception generated if the app does not use ACCESS_FINE_LOCATION permission.
+        }
+
     }
 
 
@@ -167,21 +210,27 @@ public class GPStracker extends Service implements ConnectionCallbacks, OnConnec
         mCurrentLocation = location;
         String msg = "Location = "+ location;
         Log.i(TAG, msg);
-        doAction();
+        doAction(location);
     }
 
     @Override
     public void onDestroy(){
+        //clearAllNotify();
         mMeteor.disconnect();
+        removeActivityUpdates();
+        removeAllFences();
+        stopLocationUpdates();
         // Unregister the broadcast receiver that was registered during onResume().
         LocalBroadcastManager.getInstance(this).unregisterReceiver(mBroadcastReceiver);
-        stopLocationUpdates();
+        if (this.notifyManager != null){
+                //remove all notifications
+                this.notifyManager.cancelAll();
+                Log.i(TAG,"removed all notifications");
+        }
+
         if (mGoogleApiClient.isConnected()) {
-            removeActivityUpdates();
             mGoogleApiClient.disconnect();
         }
-        //remove all notifications
-        notifyManager.cancelAll();
         Log.w(TAG, "------------------------------------------ Destroyed GPStracker Service");
         super.onDestroy();
     }
@@ -193,7 +242,7 @@ public class GPStracker extends Service implements ConnectionCallbacks, OnConnec
         // Set the Intent action to open Location Settings
         Intent gpsIntent = new Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS);
         // Create a PendingIntent to start an Activity
-        PendingIntent pendingIntent = PendingIntent.getActivity(getApplicationContext(), 0, gpsIntent,
+        PendingIntent pendingIntent = PendingIntent.getActivity(getApplicationContext(), 2, gpsIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT);
         // Create a notification builder that's compatible with platforms >= version 4
         NotificationCompat.Builder builder =
@@ -206,14 +255,16 @@ public class GPStracker extends Service implements ConnectionCallbacks, OnConnec
                 .setAutoCancel(true)
                         // Get the Intent that starts the Location settings panel
                 .setContentIntent(pendingIntent);
-        // Get an instance of the Notification Manager
-        notifyManager = (NotificationManager)
-                getSystemService(Context.NOTIFICATION_SERVICE);
+
         // Build the notification and post it
         notifyManager.notify(0, builder.build());
     }
-    private void doAction(){
-
+    private void doAction(Location location){
+        String geohash = GeoHashUtils.encode(location.getLatitude(), location.getLongitude());
+        HashMap values = new HashMap();
+        values.put("gh", geohash);
+        values.put("heading", null);
+        mMeteor.call("postLocation", new Object[]{values});
     }
 
     protected void stopLocationUpdates() {
@@ -232,7 +283,7 @@ public class GPStracker extends Service implements ConnectionCallbacks, OnConnec
      */
     public void requestActivityUpdates(){
         if (!mGoogleApiClient.isConnected()) {
-            Log.i(TAG,"API client needs to be connected before asking for activity updates");
+            Log.i(TAG, "API client needs to be connected before asking for activity updates");
             return;
         }
         ActivityRecognition.ActivityRecognitionApi.requestActivityUpdates(
@@ -292,9 +343,13 @@ public class GPStracker extends Service implements ConnectionCallbacks, OnConnec
             // Toggle the status of activity updates requested, and save in shared preferences.
             boolean requestingUpdates = !getUpdatesRequestedState();
             setUpdatesRequestedState(requestingUpdates);
-            Log.i(TAG,requestingUpdates ?"Activity updates added" : "Activity updates removed");
+            Log.i(TAG, requestingUpdates ? "Activity updates added" : "Activity updates removed");
         }else{
             Log.e(TAG, "Error adding or removing activity detection: " + status.getStatusMessage());
+            // Get the status code for the error and log it using a user-friendly message.
+            String errorMessage = Constants.getGeofenceErrorString(this,
+                    status.getStatusCode());
+            Log.e(TAG, errorMessage);
         }
     }
 
@@ -328,6 +383,27 @@ public class GPStracker extends Service implements ConnectionCallbacks, OnConnec
         return getSharedPreferences(Constants.SHARED_PREFERENCES_NAME, MODE_PRIVATE);
     }
 
+    /**
+     * sets documentID for each collection
+     * @param subscriptionName
+     * @param documentID
+     */
+    private void setDocumentID(String subscriptionName, String documentID){
+        getSharedPreferencesInstance()
+                .edit()
+                .putString(subscriptionName,documentID)
+                .commit();
+    }
+
+    /**
+     * get documentID for each collection
+     * @param collectionName
+     * @return
+     */
+    private String getDocumentID(String collectionName){
+        return getSharedPreferencesInstance().getString(collectionName, null);
+    }
+
     private void updateDetectedActivitiesList(ArrayList<DetectedActivity> updatedActivities) {
         for (DetectedActivity member : updatedActivities){
             Log.i(TAG,String.valueOf(member));
@@ -342,45 +418,71 @@ public class GPStracker extends Service implements ConnectionCallbacks, OnConnec
         if(signedInAutomatically){
             Log.i(TAG,"Meteor: Successfully logged in automatically");
         }else{
-            mMeteor.loginWithEmail("public@tpolo.com", "Pass1234", new ResultListener() {
+            //mMeteor.loginWithEmail("public@tpolo.com", "Pass1234", new ResultListener()
+            //project @D:\Libraries\Documents\cordova\AndroidDDP
+            mMeteor.loginWithToken("VnyPEWQpAs5r5YBBgdfKlJGI16XpEDEMV-bYsB9YJfr",  new ResultListener() {
                 @Override
                 public void onSuccess(String result) {
-                    Log.i(TAG, "Meteor: Is logged in: "+mMeteor.isLoggedIn());
-                    Log.i(TAG, "Meteor: UserId "+mMeteor.getUserId());
+                    Log.i(TAG, "Meteor: Is logged in: " + mMeteor.isLoggedIn());
+                    Log.i(TAG, "Meteor: UserId " + mMeteor.getUserId());
                 }
 
                 @Override
                 public void onError(String error, String reason, String details) {
-                    Log.i(TAG,"Could not log in: "+error+" / "+reason+" / "+details);
+                    Log.i(TAG, "Could not log in: " + error + " / " + reason + " / " + details);
+                    return;
                 }
             });
+        }
+        if(mMeteor.isLoggedIn()){
+            //subscribe to coordinates to add as geofences
+            String  thefences= mMeteor.subscribe("thefences");
+            setDocumentID("thefences",thefences);
         }
     }
 
     @Override
     public void onDisconnect(int code, String reason) {
         //Meteor callback
-        Log.i(TAG,"Meteor:  Disconnected from Server");
+        Log.i(TAG, "Meteor:  Disconnected from Server");
     }
 
     @Override
     public void onDataAdded(String collectionName, String documentID, String fieldsJson) {
         //Meteor callback
+        Log.i(TAG,"onDataAdded "+collectionName+"  "+documentID+"  "+fieldsJson);
+        if(collectionName.equals("transActs")){
+            try {
+                JSONObject jsonObj = new JSONObject(fieldsJson);
+                JSONObject request = jsonObj.getJSONObject("request"); // get request object
+                JSONArray srcloc = request.getJSONArray("srcloc");
+                double srcLng = srcloc.getDouble(0);
+                double srcLat = srcloc.getDouble(1);
+                Log.i(TAG,"latitude : "+srcLat+"  longitude: "+srcLng);
+
+            } catch (JSONException e) {
+                e.printStackTrace();
+            }
+        }
+
     }
 
     @Override
     public void onDataChanged(String collectionName, String documentID, String updatedValuesJson, String removedValuesJson) {
         //Meteor callback
+        Log.i(TAG,"onDataChanged "+collectionName+"  "+documentID+"  "+updatedValuesJson+"  "+removedValuesJson);
     }
 
     @Override
     public void onDataRemoved(String collectionName, String documentID) {
         //Meteor callback
+        Log.i(TAG,"onDataRemoved  "+collectionName+"  "+documentID);
     }
 
     @Override
     public void onException(Exception e) {
         //Meteor callback
+        Log.e(TAG, "Meteor Exception " + e.toString());
     }
 
     /**
@@ -417,6 +519,70 @@ public class GPStracker extends Service implements ConnectionCallbacks, OnConnec
         }
 
     }
+    /**
+     * Method to build Geofence object based on location
+     */
+    public Geofence buildGeofenceObject(String id, double lat, double lng ){
+        return (new Geofence.Builder()
+                // set the request ID for the geofence. This is a string to identify this geofence
+                .setRequestId(id)
+                // set loitering delay for dwell
+                .setLoiteringDelay(Constants.GEOFENCE_LOITERING_DELAY)
+                // set the time delay for triggering notification
+                .setNotificationResponsiveness(Constants.GEOFENCE_RESPONSE)
+                // set the circular region of this geofence
+                .setCircularRegion(lat, lng, Constants.GEOFENCE_RADIUS_IN_METERS)
+                // set the expiration duration of the geofence. This geofence gets automatically removed after this period of time
+                .setExpirationDuration(Constants.GEOFENCE_EXPIRATION_IN_MILLISECONDS)
+                // set the transition types of interest. Alerts are only generated for these transitions.
+                .setTransitionTypes(Geofence.GEOFENCE_TRANSITION_ENTER | Geofence.GEOFENCE_TRANSITION_EXIT)
+                // Create the geofence
+                .build());
+    }
+    /**
+     * Builds and returns a GeofencingRequest. Specifies  geofence to be monitored. ALso specifies how the geofence notifications are initially triggered
+     */
+    private GeofencingRequest getGeofencingRequest(Geofence geofence){
+        GeofencingRequest.Builder builder = new GeofencingRequest.Builder();
+        // The INITIAL_TRIGGER_ENTER flag indicates that geofencing service should trigger a
+        // GEOFENCE_TRANSITION_ENTER notification when the geofence is added and if the device
+        // is already inside that geofence.
+        builder.setInitialTrigger(GeofencingRequest.INITIAL_TRIGGER_ENTER);
+        // Add the geofences to be monitored by geofencing service.
+        builder.addGeofence(geofence);
+        // Return a GeofencingRequest.
+        return builder.build();
+    }
+    /**
+     * Gets a PendingIntent to send with the request to add or remove Geofences. Location Services
+     * issues the Intent inside this PendingIntent whenever a geofence transition occurs for the
+     * current list of geofences.
+     *
+     * @return A PendingIntent for the IntentService that handles geofence transitions.
+     */
+    private PendingIntent getGeofencePendingIntent() {
+        // Reuse the PendingIntent if we already have it.
+        if (mGeofencePendingIntent != null) {
+            return mGeofencePendingIntent;
+        }
+        Intent intent = new Intent(this, GeofenceTransitionsIntentService.class);
+        // We use FLAG_UPDATE_CURRENT so that we get the same pending intent back when calling
+        // addGeofences() and removeGeofences().
+        return PendingIntent.getService(this, 1, intent, PendingIntent.FLAG_UPDATE_CURRENT);
+    }
+    public void removeAllFences(){
+        try{
+            LocationServices.GeofencingApi.removeGeofences(mGoogleApiClient,getGeofencePendingIntent()).setResultCallback(new ResultCallback<Status>() {
+                @Override
+                public void onResult(Status status) {
+                    Log.i(TAG,"removed all geofences");
+                }
+            });
+        }catch (SecurityException securityException){
+
+        }
+
+    }
 
     /**
      * GoogleApiClient thread for connection to a GoogleApiClient#blockingConnect
@@ -431,6 +597,7 @@ public class GPStracker extends Service implements ConnectionCallbacks, OnConnec
                     .addApi(ActivityRecognition.API)
                     .build();
         }
+        @SuppressLint("LongLogTag")
         @Override
         public void run() {
             buildGoogleApiClient();
@@ -447,6 +614,28 @@ public class GPStracker extends Service implements ConnectionCallbacks, OnConnec
 
             // register the callback that will handle events and receive messages
             mMeteor.setCallback(GPStracker.this);
+        }
+    }
+
+    private class fenceResults implements ResultCallback<Status> {
+        private final String TAG = fenceResults.class.getSimpleName();
+        @Override
+        public void onResult(Status status) {
+            Log.i(TAG, "Geofence status");
+            if (status.isSuccess()) {
+                Toast.makeText(
+                        GPStracker.this,
+                        "Geofences Added",
+                        Toast.LENGTH_SHORT
+                ).show();
+            }else{
+                // Get the status code for the error and log it using a user-friendly message.
+                String errorMessage = Constants.getGeofenceErrorString(GPStracker.this,
+                        status.getStatusCode());
+                Log.e(TAG, errorMessage);
+            }
+
+
         }
     }
 }

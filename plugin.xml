@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <plugin xmlns="http://apache.org/cordova/ns/plugins/1.0" xmlns:android="http://schemas.android.com/apk/res/android" 
-	id="cordova-plugin-motobite-location" version="0.0.2">
+	id="cordova-plugin-motobite-location" version="0.0.4">
 	<name>MBGPS</name>
 	<description>A service for tracking users in background</description>
 	<license>Apache 2.0</license>
@@ -18,11 +18,17 @@
 		 <source-file src="src/android/GPStrackerHelper.java" target-dir="src/com/reku/motobite/cordova" />
 		 <source-file src="src/android/Constants.java" target-dir="src/com/reku/motobite/cordova" />
 		 <source-file src="src/android/DetectedActivitiesIntentService.java" target-dir="src/com/reku/motobite/cordova" />
+		 <source-file src="src/android/GeofenceTransitionsIntentService.java" target-dir="src/com/reku/motobite/cordova" />
+		 <!--<source-file src="src/android/GeofenceErrorMessages.java" target-dir="src/com/reku/motobite/cordova" /> -->
 		 <source-file src="src/android/libs/Android-DDP.jar" target-dir="libs" />
+		 <source-file src="src/android/libs/autobahn-0.5.0.jar" target-dir="libs" />
+		 <source-file src="src/android/libs/jackson-core-asl-1.9.7.jar" target-dir="libs" />
+		 <source-file src="src/android/libs/jackson-mapper-asl-1.9.7.jar" target-dir="libs" />
 		 
 		 <config-file target="AndroidManifest.xml" parent="/manifest/application">
             <service android:name="com.reku.motobite.cordova.GPStracker" android:enabled="true" android:process=":remote" />
 			<service android:name="com.reku.motobite.cordova.DetectedActivitiesIntentService" android:process=":remote" android:exported="false" />
+			<service android:name="com.reku.motobite.cordova.GeofenceTransitionsIntentService" android:process=":remote" android:exported="false" />
         </config-file>
 		
 		<config-file target="AndroidManifest.xml" parent="/manifest">

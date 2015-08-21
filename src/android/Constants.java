@@ -4,6 +4,7 @@ import android.content.Context;
 import android.content.res.Resources;
 
 import com.google.android.gms.location.DetectedActivity;
+import com.google.android.gms.location.GeofenceStatusCodes;
 
 /**
  * Created by rakeshkalyankar on 29/05/15.
@@ -20,6 +21,13 @@ public final class Constants {
     public static final String ACTIVITY_PROBABLE = PACKAGE_NAME + ".ACTIVITY_PROBABLE";
     public static final String SHARED_PREFERENCES_NAME = PACKAGE_NAME + ".SHARED_PREFERENCES";
     public static final String ACTIVITY_UPDATES_REQUESTED_KEY = PACKAGE_NAME + ".ACTIVITY_UPDATES_REQUESTED";
+    public static final String SHARED_NOTIFYID_COUNT = PACKAGE_NAME + ".SHARED_NOTIFYID_COUNT";
+    public static final String GEOFENCES_ADDED_KEY = PACKAGE_NAME + ".GEOFENCES_ADDED_KEY";
+    public static final long GEOFENCE_EXPIRATION_IN_MILLISECONDS = 12 * 60 * 60 * 1000;
+    public static final float GEOFENCE_RADIUS_IN_METERS = 200;
+    public static final int GEOFENCE_LOITERING_DELAY = 10000;
+    public static final int GEOFENCE_RESPONSE = 10000;
+
     /**
      * The desired interval for location updates. Inexact. Updates may be more or less frequent.
      */
@@ -61,6 +69,22 @@ public final class Constants {
                 return "WALKING";
             default:
                 return "unidentifiable_activity : "+ detectedActivityType;
+        }
+    }
+    /**
+     * Returns the error string for a geofencing error code.
+     */
+    public static String getGeofenceErrorString(Context context, int errorCode) {
+        Resources mResources = context.getResources();
+        switch (errorCode) {
+            case GeofenceStatusCodes.GEOFENCE_NOT_AVAILABLE:
+                return "Geofence service is not available now";
+            case GeofenceStatusCodes.GEOFENCE_TOO_MANY_GEOFENCES:
+                return "Your app has registered too many geofences";
+            case GeofenceStatusCodes.GEOFENCE_TOO_MANY_PENDING_INTENTS:
+                return "You have provided too many PendingIntents to the addGeofences() call";
+            default:
+                return "Unknown error: the Geofence service is not available now";
         }
     }
 }
