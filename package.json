@@ -1,0 +1,32 @@
+{
+  "name": "motobite-plugin-background",
+  "version": "0.0.9",
+  "description": "A service for tracking users in background",
+  "cordova": {
+    "id": "com.motobite.cordova.location.plugin",
+    "platforms": [
+      "android",
+      "ios"
+    ]
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@bitbucket.org/rakesh_lal/motobite-plugin-background.git"
+  },
+  "keywords": [
+    "cordova",
+    "motobite",
+    "ecosystem:cordova",
+    "cordova-android",
+    "cordova-ios"
+  ],
+  "engines": [
+    {
+      "name": "cordova",
+      "version": ">=3.0.0"
+    }
+  ],
+  "author": "Rakesh Kalyankar",
+  "license": "Apache 2.0",
+  "homepage": "https://bitbucket.org/rakesh_lal/motobite-plugin-background#readme"
+}
