@@ -9,6 +9,7 @@
 	<engines>
         <engine name="cordova" version=">=3.0.0" />
     </engines>
+	<dependency id="cordova-plugin-dialogs" />
 	<js-module src="www/BackgroundGeoLocation.js" name="BackgroundGeoLocation">
             <clobbers target="motobite.location" />
      </js-module>
@@ -58,12 +59,16 @@
 		<config-file target="*-Info.plist" parent="NSLocationWhenInUseUsageDescription">
 					<string>MotoBite needs access to your location information</string>
 		</config-file>
+		<config-file target="*-Info.plist" parent="UIBackgroundModes">
+			<array>
+				<string>location</string>
+			</array>
+		</config-file>
 		 <config-file target="config.xml" parent="/*">
 			 <preference name="deployment-target" value="7.0" />
 			 <feature name="BackgroundGeoLocation">
             	<param name="ios-package" value="CDVGPSTrackerHelper"/>
         	</feature>
 		</config-file>
-		<source-file src="src/ios/CDVGPSTracker.swift" />
 	 </platform>
 </plugin>

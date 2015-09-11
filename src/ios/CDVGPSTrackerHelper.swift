@@ -8,6 +8,7 @@
 
 import Foundation
 import CoreLocation
+import CoreMotion
 
 enum CDVLocationStatus: Int {
     case PERMISSIONDENIED = 1
@@ -28,6 +29,8 @@ class CDVLocationData {
 @objc(CDVGPSTrackerHelper) class CDVGPSTrackerHelper: CDVPlugin, CLLocationManagerDelegate {
     // MARK: Global Variables
     var locationManager: CLLocationManager?
+    var activityManager: CMMotionActivityManager?
+    var activityArray = [String]()
     var locationStatus = "Not Started"
     var locationData: CDVLocationData?
     /// Flag to determine whether to command start or stop updating location.
@@ -55,7 +58,8 @@ class CDVLocationData {
             var message = command.arguments[0] as! String
             message = message.uppercaseString
             print(message)
-            self.locationManager!.startUpdatingLocation()
+            //self.locationManager!.startUpdatingLocation()
+            self.startActivityMonitoring()
             let pluginResult = CDVPluginResult(status: CDVCommandStatus_OK, messageAsString: message)
             self.commandDelegate!.sendPluginResult(pluginResult, callbackId:command.callbackId)
         }
@@ -67,6 +71,7 @@ class CDVLocationData {
     }
     // function to get location
     func getLocation(command: CDVInvokedUrlCommand) {
+        stopActivityMonitoring()
         dispatch_async(dispatch_get_main_queue()) {
             let callbackId: String? = command.callbackId
             let enableHighAccuracy = command.arguments[0].boolValue ?? true
@@ -96,7 +101,6 @@ class CDVLocationData {
                     print("getLocation: to return location")
                 }
             }
-            
         }
     }
     func start(command: CDVInvokedUrlCommand) {
@@ -287,4 +291,75 @@ class CDVLocationData {
         }
         self.locationData?.locationCallbacks.removeAllObjects()
     }
+    
+    // MARK: Activity Manager Helpers
+    func startActivityMonitoring() {
+        // If activity updates are supported, start updates on the motionQueue
+        if CMMotionActivityManager.isActivityAvailable() {
+            print("Start Activity updates")
+            let manager = CMMotionActivityManager()
+            manager.startActivityUpdatesToQueue(NSOperationQueue(), withHandler: {(activity) -> Void in
+                switch activity!.confidence {
+                    case CMMotionActivityConfidence.High, CMMotionActivityConfidence.Medium:
+                        if activity!.walking {
+                            if self.updateActivityArray("walking") {
+                                print("MotionTypeWalking")
+                            }
+                        } else if activity!.automotive {
+                            if self.updateActivityArray("automotive") {
+                                print("MotionTypeDriving")
+                            }
+                        } else if activity!.stationary || activity!.unknown {
+                            if self.updateActivityArray("stationary") {
+                                print("MotionTypeNotMoving")
+                            }
+                            
+                        }
+                default:
+                    print(activity!.confidence.rawValue)
+                }
+                
+            })
+            self.activityManager = manager
+        } else {
+            print("Activity not Available")
+        }
+    }
+    func stopActivityMonitoring() {
+        print("Stop Activity updates")
+        if let activityManager = activityManager {
+            activityManager.stopActivityUpdates()
+        }
+        activityManager = nil
+    }
+    // function to return stable activity sampled for 5 times
+    func updateActivityArray(activity: String) -> Bool{
+        print(activityArray.count)
+        print(activityArray.last)
+        // if count is 5 then time to change activity
+        if activityArray.count > 4 {
+            if activityArray.last == activity {
+                activityArray = []
+                return true
+            }else{
+                // if array contains different value rest the array
+                activityArray = []
+                activityArray.append(activity)
+            }
+        } else if activityArray.count > 0 {
+            // if array is not full append the same value
+            if activityArray.last == activity {
+                activityArray.append(activity)
+            } else {
+                // if array contains different value rest the array
+                activityArray = []
+                activityArray.append(activity)
+            }
+        } else {
+            // if array is empty append the value
+            activityArray.append(activity)
+        }
+        return false
+    }
+    
 }
