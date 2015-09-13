@@ -67,8 +67,10 @@
 		 <config-file target="config.xml" parent="/*">
 			 <preference name="deployment-target" value="7.0" />
 			 <feature name="BackgroundGeoLocation">
-            	<param name="ios-package" value="CDVGPSTrackerHelper"/>
+            	<param name="ios-package" value="CDVGPSTracker"/>
         	</feature>
 		</config-file>
+		<source-file src="src/ios/CDVGPSTrackerHelper.swift" />
+		<source-file src="src/ios/CDVGPSTracker.swift" />
 	 </platform>
 </plugin>

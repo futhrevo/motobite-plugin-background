@@ -26,12 +26,21 @@ module.exports = {
             'configure',
             [user]);
     },
+    getLocation: function (config, success, failure) {
+        exec(success || function () { },
+            failure || function () { },
+            'BackgroundGeoLocation',
+            'getLocation',
+            [true]);
+    },
     // add geofences
     addGeofence: function (config, success, failure) {
         this.config = config || {};
         if (!config.name) {
             throw "www - addGeofence : name is not included in config";
         }
+        // id is _id from collection, should be unique
+        // type can be "safeHouse", "pickup", "poi"
         if (!config.id && !config.type) {
             throw "www - addGeofence : need a id and type for mapping to collection";
         }
@@ -49,7 +58,7 @@ module.exports = {
     },
     // remove a geofence
     removeGeofence: function (config, success, failure) {
-        if (!config.type && !config.id) {
+        if (!config.id) {
             throw "www - removeGeofence : need to specify id in order to remove the geofence"
         }
         exec(success || function () { },
@@ -57,6 +66,14 @@ module.exports = {
             'BackgroundGeoLocation',
             'removeGeofence',
             [config]);
+    },
+     //remove all geofences registered
+    removeallGeofences: function (success, failure) {
+         exec(success || function () { },
+            failure || function () { },
+            'BackgroundGeoLocation',
+            'removeAllGeofences',
+            []);
      }
 };
 
