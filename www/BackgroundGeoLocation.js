@@ -33,6 +33,16 @@ module.exports = {
             'getLocation',
             [true]);
     },
+    echo: function (message, success, failure) {
+        var Success = function (str) { console.log(str) };
+        var Failure = function () { console.log("No echo heard") };
+        var msg = message || "ping";
+        exec(success || Success,
+            failure || Failure,
+            'BackgroundGeoLocation',
+            'echo',
+            [msg]);
+    },
     // add geofences
     addGeofence: function (config, success, failure) {
         this.config = config || {};
@@ -74,6 +84,17 @@ module.exports = {
             'BackgroundGeoLocation',
             'removeAllGeofences',
             []);
+    },
+     // send a local notification
+    notifyAbout: function (config, success, failure) {
+         if (!config.message) {
+            throw "Notification requires a message";
+        }
+         exec(success || function () { },
+            failure || function () { },
+            'BackgroundGeoLocation',
+            'notifyAbout',
+            [config]);
      }
 };
 

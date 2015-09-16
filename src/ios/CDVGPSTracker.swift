@@ -9,6 +9,7 @@
 import Foundation
 import CoreLocation
 import CoreMotion
+import AudioToolbox
 
 let TAG = "CDVGPSTracker"
 let iOS8 = floor(NSFoundationVersionNumber) > floor(NSFoundationVersionNumber_iOS_7_1)
@@ -26,10 +27,12 @@ func log(message: String){
     var activityArray = [String]()
     var locationStatus = "Not Started"
     var locationData: CDVLocationData?
+    var locationUpdateMode: CDVLocationMode = .NONE
     /// Flag to determine whether to command start or stop updating location.
     var commandStartUpdatingLocation = true
     var __locationStarted = false
-    var __highAccuracyEnabled = false
+    var alertShowing = false
+    var __badgecount:Int = 0
     var safeHouses = jsCollection()
     var pickup = jsCollection()
     var poi = jsCollection()
@@ -39,11 +42,20 @@ func log(message: String){
     override func pluginInitialize() {
         self.locationManager = CLLocationManager()
         self.locationManager!.delegate = self
-        self.locationManager!.desiredAccuracy = kCLLocationAccuracyNearestTenMeters
+        self.locationManager!.desiredAccuracy = kCLLocationAccuracyBest
+        promptForNotificationPermission()
+        if !CLLocationManager.locationServicesEnabled(){
+            log("Location services are disabled")
+        } else {
+            log("Location services are enabled")
+        }
         if #available(iOS 8.0, *) {
             self.locationManager!.requestAlwaysAuthorization()
         } else {
             // Fallback on earlier versions
+        }
+        if !CLLocationManager.isMonitoringAvailableForClass(CLRegion){
+            log("Geofencing not available")
         }
         log("gpsagent Initialized")
     }
@@ -61,21 +73,26 @@ func log(message: String){
         super.onMemoryWarning()
     }
     // MARK: methods exposed to JS
-    func echo(command: CDVInvokedUrlCommand){
-        dispatch_async(dispatch_get_global_queue(priority, 0)) {
-            // do your stuff here
-            var message = command.arguments[0] as! String
-            message = message.uppercaseString
-            log(message)
-            //self.locationManager!.startUpdatingLocation()
-            self.startActivityMonitoring()
-            let pluginResult = CDVPluginResult(status: CDVCommandStatus_OK, messageAsString: message)
-            self.commandDelegate!.sendPluginResult(pluginResult, callbackId:command.callbackId)
-        }
+ 
+    func configure(command: CDVInvokedUrlCommand) {
+        
+    }
+    func start(command: CDVInvokedUrlCommand) {
         
     }
     
-    func configure(command: CDVInvokedUrlCommand) {
+    func stop(command: CDVInvokedUrlCommand){
+        
+    }
+    func echo(command: CDVInvokedUrlCommand){
+        dispatch_async(dispatch_get_global_queue(priority, 0)) {
+            var message = command.arguments[0] as! String
+            message = message.uppercaseString
+            log(message)
+            self.notifyLocalAbout(message)
+            let pluginResult = CDVPluginResult(status: CDVCommandStatus_OK, messageAsString: message)
+            self.commandDelegate!.sendPluginResult(pluginResult, callbackId:command.callbackId)
+        }
         
     }
     // function to get location
@@ -93,7 +110,7 @@ func log(message: String){
                     self.locationData = CDVLocationData()
                     log("getLocation: locationData is nill")
                 }
-                var lData  = self.locationData
+                let lData  = self.locationData
                 if lData?.locationCallbacks == nil {
                     lData?.locationCallbacks = NSMutableArray.init(capacity: 1)
                 }
@@ -104,7 +121,7 @@ func log(message: String){
                     }
                     // Tell the location manager to start notifying us of location updates
                     print("getLocation: to start location")
-                    self.startLocation(enableHighAccuracy)
+                    self.startLocation(CDVLocationMode.ONESHOT)
                 } else {
                     self.returnLocationInfo(callbackId!, andKeepCallback: false)
                     print("getLocation: to return location")
@@ -112,13 +129,7 @@ func log(message: String){
             }
         }
     }
-    func start(command: CDVInvokedUrlCommand) {
-        
-    }
     
-    func stop(command: CDVInvokedUrlCommand){
-        
-    }
     func addGeofence(command: CDVInvokedUrlCommand){
         dispatch_async(dispatch_get_global_queue(priority, 0)) {
             if !CLLocationManager.isMonitoringAvailableForClass(CLCircularRegion){
@@ -128,7 +139,7 @@ func log(message: String){
                 return
             }
             let cfg = command.argumentAtIndex(0)
-            let callbackId = command.callbackId as! String
+            let callbackId = command.callbackId as String
             // check if location services are enabled
             if !self.isLocationServicesEnabled() {
                 let result = self.returnLocationError(UInt(CDVLocationStatus.PERMISSIONDENIED.rawValue), withMessage: "Location services are disabled.")
@@ -150,10 +161,9 @@ func log(message: String){
                 self.poi.insert(obj)
             }
             let region = CLCircularRegion(center: location, radius: radius, identifier: id)
-            self.startLocation(true)
             self.locationManager?.startMonitoringForRegion(region)
             log("addGeofence: a new geofence added with id: \(id)")
-            var pluginResult = CDVPluginResult(status: CDVCommandStatus_OK)
+            let pluginResult = CDVPluginResult(status: CDVCommandStatus_OK)
             pluginResult.setKeepCallbackAsBool(true)
             self.commandDelegate!.sendPluginResult(pluginResult, callbackId:command.callbackId)
         }
@@ -223,14 +233,13 @@ func log(message: String){
     
     func locationManager(manager: CLLocationManager, didFailWithError error: NSError) {
         print("didFailWithError: \(error.description)")
-        let errorAlert = UIAlertView(title: "Error", message: "Failed to Get Your Location", delegate: nil, cancelButtonTitle: "Ok")
-        errorAlert.show()
+        log("Error: Failed to get Your Location")
     }
     
     func locationManager(manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         let newLocation: CLLocation! = locations.last
         print("current position: \(newLocation.coordinate.longitude) , \(newLocation.coordinate.latitude)")
-        var cData = self.locationData
+        let cData = self.locationData
         cData?.locationInfo = newLocation
         if self.locationData?.locationCallbacks.count > 0 {
             log("Send to returnLocationInfo with callbackId")
@@ -244,6 +253,13 @@ func log(message: String){
             self._stopLocation()
         }
         
+    }
+    
+    func locationManagerDidPauseLocationUpdates(manager: CLLocationManager) {
+        log("Location updating is paused")
+    }
+    func locationManagerDidResumeLocationUpdates(manager: CLLocationManager) {
+        log("Location updating was resumed")
     }
     // MARK: Delegate methods for Geofences
     func locationManager(manager: CLLocationManager, monitoringDidFailForRegion region: CLRegion?, withError error: NSError) {
@@ -277,7 +293,7 @@ func log(message: String){
                 returnInfo["type"] = NSString(string:ltype)
                 log("Entry at \(timestamp) with callbackId \(callbackId)")
                 dispatch_async(dispatch_get_main_queue()) {
-                var result = CDVPluginResult(status: CDVCommandStatus_OK, messageAsDictionary: returnInfo)
+                let result = CDVPluginResult(status: CDVCommandStatus_OK, messageAsDictionary: returnInfo)
                 result.setKeepCallbackAsBool(true)
                     if (result != nil) {
                         self.commandDelegate?.sendPluginResult(result, callbackId: callbackId)
@@ -309,13 +325,23 @@ func log(message: String){
                 returnInfo["exit"] = true
                 returnInfo["type"] = NSString(string:type.type!)
                 dispatch_async(dispatch_get_main_queue()) {
-                var result = CDVPluginResult(status: CDVCommandStatus_OK, messageAsDictionary: returnInfo)
+                let result = CDVPluginResult(status: CDVCommandStatus_OK, messageAsDictionary: returnInfo)
                 result.setKeepCallbackAsBool(true)
                 if (result != nil) {
                         self.commandDelegate?.sendPluginResult(result, callbackId: callbackId)
                     }
                 }
             }
+        }
+    }
+    func locationManager(manager: CLLocationManager, didDetermineState state: CLRegionState, forRegion region: CLRegion) {
+        switch state {
+        case .Inside:
+            log("User already inside geofence, check if callbackId works")
+            locationManager(locationManager!, didEnterRegion: region)
+        
+        default:
+            log("TODO handling if no one is inside geofence")
         }
     }
     // MARK: GPS Helper methods
@@ -341,13 +367,14 @@ func log(message: String){
         return false
     }
     // start location updates
-    func startLocation(enableHighAccuracy: Bool) {
+    func startLocation(mode: CDVLocationMode) -> Bool{
+        var enableHighAccuracy: Bool = true
         // if location services are not available
         if !self.isLocationServicesEnabled() {
             let result = self.returnLocationError(UInt(CDVLocationStatus.PERMISSIONDENIED.rawValue), withMessage: "Location services are disabled.")
             print("startLocation: location services disabled")
             sendLocationErrorResult(result)
-            return
+            return false
         }
         if !self.isAuthorized() {
             print("startLocation: not Authorized")
@@ -360,7 +387,7 @@ func log(message: String){
             }
             let result = self.returnLocationError(UInt(CDVLocationStatus.PERMISSIONDENIED.rawValue), withMessage: message!)
             sendLocationErrorResult(result)
-            return
+            return false
         }
         if #available(iOS 8.0, *) {
             print("startLocation: ios8 available")
@@ -373,29 +400,48 @@ func log(message: String){
                 } else {
                     NSLog("[Warning] No NSLocationAlwaysUsageDescription or NSLocationWhenInUseUsageDescription key is defined in the Info.plist file.")
                 }
-                return
+                return false
             }
         }
         // Tell the location manager to start notifying us of location updates. We
         // first stop, and then start the updating to ensure we get at least one
         // update, even if our location did not change.
-        self.locationManager?.stopUpdatingLocation()
-        self.locationManager?.startUpdatingLocation()
+        _stopLocation()
         __locationStarted = true
-        if enableHighAccuracy {
-            print("startLocation: high accuracy location")
-            __highAccuracyEnabled = true
-            // Set distance filter to 5 for a high accuracy. Setting it to "kCLDistanceFilterNone" could provide a
-            // higher accuracy, but it's also just spamming the callback with useless reports which drain the battery.
-            self.locationManager?.distanceFilter = 5
-            // Set desired accuracy to Best.
-            self.locationManager?.desiredAccuracy = kCLLocationAccuracyBest
-        } else {
-            print("startLocation: low accuracy location")
-            __highAccuracyEnabled = false
-            self.locationManager?.distanceFilter = 10
-            self.locationManager?.desiredAccuracy = kCLLocationAccuracyNearestTenMeters
+        switch mode {
+            case .ONESHOT:
+                locationUpdateMode = .ONESHOT
+                if #available(iOS 9.0, *) {
+                    locationManager?.requestLocation()
+                } else {
+                    // Fallback on earlier versions
+                    self.locationManager?.startUpdatingLocation()
+                }
+            case .NAVMODE:
+                locationUpdateMode = .NAVMODE
+                locationManager?.desiredAccuracy = kCLLocationAccuracyBestForNavigation
+                locationManager?.startUpdatingLocation()
+                return true
+            case .BESTMODE:
+                locationUpdateMode = .BESTMODE
+                locationManager?.desiredAccuracy = kCLLocationAccuracyBest
+                locationManager?.startUpdatingLocation()
+                return true
+            case .SIGMODE:
+                locationUpdateMode = .SIGMODE
+                if CLLocationManager.significantLocationChangeMonitoringAvailable() {
+                    return true
+                } else {
+                    locationManager?.startUpdatingLocation()
+                    return true
+            }
+            default:
+                locationUpdateMode = .NONE
+                log("No mode specified, nothing to start")
+                return true
+            
         }
+        return false
     }
     // stop location updates
     func _stopLocation(){
@@ -403,9 +449,15 @@ func log(message: String){
             if !self.isLocationServicesEnabled(){
                 return
             }
-            self.locationManager?.stopUpdatingLocation()
+            log("Stopping monitoring location changes")
+            switch locationUpdateMode {
+            case .SIGMODE:
+                    self.locationManager?.stopMonitoringSignificantLocationChanges()
+            default:
+                self.locationManager?.stopUpdatingLocation()
+            }
+            locationUpdateMode = .NONE
             __locationStarted = false
-            __highAccuracyEnabled = false
         }
     }
     // return location received to callback
@@ -548,5 +600,49 @@ func log(message: String){
                 }
             }
         }
+    }
+    
+    // MARK: Notification Helpers
+    func promptForNotificationPermission(){
+        if #available(iOS 8.0, *) {
+            let types: UIUserNotificationType = [.Badge, .Alert, .Sound]
+            let settings = UIUserNotificationSettings(forTypes: types, categories: nil)
+            UIApplication.sharedApplication().registerUserNotificationSettings(settings)
+        } else {
+            // Fallback on earlier versions
+            log("pre ios8 doesnt ask any permissions")
+        }
+        
+    }
+    func notifyLocalAbout(message: String){
+        log("Creating local notification")
+        let notification = UILocalNotification()
+        notification.timeZone = NSTimeZone.defaultTimeZone()
+        notification.fireDate = NSDate()
+        notification.soundName  = UILocalNotificationDefaultSoundName
+        notification.alertAction = "View Details"
+        notification.alertBody = "\(message) Woww it works!!"
+        notification.applicationIconBadgeNumber = 1
+        if #available(iOS 8.2, *) {
+            notification.alertTitle = "MotoBite"
+        } else {
+            // Fallback on earlier versions
+        }
+        UIApplication.sharedApplication().scheduleLocalNotification(notification)
+    }
+    // Location mode for navigation when inside a geofence
+    func locBestNavMode(){
+        if locationManager != nil {
+            _stopLocation()
+            
+        }
+    }
+    // Location mode for significant changes
+    func locSignificantMode(){
+        
+    }
+    // Location mode for best accuracy
+    func locBestAccMode(){
+        
     }
 }

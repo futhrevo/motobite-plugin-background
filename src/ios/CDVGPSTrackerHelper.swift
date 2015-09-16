@@ -15,6 +15,14 @@ enum CDVLocationStatus: Int {
     case TIMEOUT = 3
 }
 
+enum CDVLocationMode: Int{
+    case NAVMODE = 1
+    case SIGMODE = 2
+    case BESTMODE = 3
+    case ONESHOT = 4
+    case NONE = 5
+}
+
 class CDVLocationData {
     var locationInfo: CLLocation!
     var locationCallbacks: NSMutableArray!
