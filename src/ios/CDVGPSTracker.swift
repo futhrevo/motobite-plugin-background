@@ -57,6 +57,8 @@ func log(message: String){
         if !CLLocationManager.isMonitoringAvailableForClass(CLRegion){
             log("Geofencing not available")
         }
+        NSNotificationCenter.defaultCenter().addObserver(self, selector: "onPause", name: UIApplicationDidEnterBackgroundNotification, object: nil)
+        NSNotificationCenter.defaultCenter().addObserver(self, selector: "onResume", name: UIApplicationDidBecomeActiveNotification, object: nil)
         log("gpsagent Initialized")
     }
     
@@ -630,19 +632,26 @@ func log(message: String){
         }
         UIApplication.sharedApplication().scheduleLocalNotification(notification)
     }
-    // Location mode for navigation when inside a geofence
-    func locBestNavMode(){
-        if locationManager != nil {
-            _stopLocation()
-            
-        }
+//    // Location mode for navigation when inside a geofence
+//    func locBestNavMode(){
+//        if locationManager != nil {
+//            _stopLocation()
+//            
+//        }
+//    }
+//    // Location mode for significant changes
+//    func locSignificantMode(){
+//        
+//    }
+//    // Location mode for best accuracy
+//    func locBestAccMode(){
+//        
+//    }
+    // MARK: NSNotificationCenter helpers
+    func onPause() {
+        log("onPause payload: ")
     }
-    // Location mode for significant changes
-    func locSignificantMode(){
-        
-    }
-    // Location mode for best accuracy
-    func locBestAccMode(){
-        
+    func onResume() {
+        log("onResume payload: ")
     }
 }
