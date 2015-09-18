@@ -14,25 +14,8 @@
      </js-module>
 	  <!-- android -->
 	 <platform name="android">
-		 <source-file src="src/android/GPStracker.java" target-dir="src/com/reku/motobite/cordova" />
 		 <source-file src="src/android/GPStrackerHelper.java" target-dir="src/com/reku/motobite/cordova" />
-		 <source-file src="src/android/Constants.java" target-dir="src/com/reku/motobite/cordova" />
-		 <source-file src="src/android/GeoHashUtils.java" target-dir="src/com/reku/motobite/cordova" />
-		 <source-file src="src/android/DetectedActivitiesIntentService.java" target-dir="src/com/reku/motobite/cordova" />
-		 <source-file src="src/android/GeofenceTransitionsIntentService.java" target-dir="src/com/reku/motobite/cordova" />
-		 <!--<source-file src="src/android/GeofenceErrorMessages.java" target-dir="src/com/reku/motobite/cordova" /> -->
-		 <source-file src="src/android/libs/Android-DDP.jar" target-dir="libs" />
-		 <source-file src="src/android/libs/autobahn-0.5.0.jar" target-dir="libs" />
-		 <source-file src="src/android/libs/jackson-core-asl-1.9.7.jar" target-dir="libs" />
-		 <source-file src="src/android/libs/jackson-mapper-asl-1.9.7.jar" target-dir="libs" />
-		 
-		 <config-file target="AndroidManifest.xml" parent="/manifest/application">
-            <service android:name="com.reku.motobite.cordova.GPStracker" android:enabled="true" android:process=":remote" />
-			<service android:name="com.reku.motobite.cordova.DetectedActivitiesIntentService" android:process=":remote" android:exported="false" />
-			<service android:name="com.reku.motobite.cordova.GeofenceTransitionsIntentService" android:process=":remote" android:exported="false" />
-        </config-file>
-		
-		<config-file target="AndroidManifest.xml" parent="/manifest">
+		 <config-file target="AndroidManifest.xml" parent="/manifest">
 			<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
             <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
             <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
@@ -46,7 +29,7 @@
 				<param name="android-package" value="com.reku.motobite.cordova.GPStrackerHelper"/>
 			</feature>
 		</config-file>
-		<source-file src="src/android/build-extras.gradle" target-dir="." />
+		
 	 </platform>
 	 <!-- ios -->
 	 <platform name="ios">
