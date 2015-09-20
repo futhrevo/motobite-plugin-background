@@ -11,7 +11,11 @@ import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.location.Location;
 import android.os.Bundle;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Message;
+import android.os.Messenger;
+import android.os.RemoteException;
 import android.provider.Settings;
 import android.support.v4.app.NotificationCompat;
 import android.support.v4.content.LocalBroadcastManager;
@@ -44,14 +48,11 @@ import org.json.JSONObject;
 import java.util.ArrayList;
 import java.util.HashMap;
 
-import im.delight.android.ddp.Meteor;
-import im.delight.android.ddp.MeteorCallback;
-import im.delight.android.ddp.ResultListener;
 
 /**
  * Created by rakeshkalyankar on 28/05/15.
  */
-public class GPStracker extends Service implements ConnectionCallbacks, OnConnectionFailedListener, LocationListener, ResultCallback<Status>, MeteorCallback {
+public class GPStracker extends Service implements ConnectionCallbacks, OnConnectionFailedListener, LocationListener, ResultCallback<Status> {
     //TODO: Implement location listener provider method to know the status of gps provider
     private static final String TAG = GPStracker.class.getSimpleName();
     private GoogleApiClient mGoogleApiClient;
@@ -80,6 +81,16 @@ public class GPStracker extends Service implements ConnectionCallbacks, OnConnec
      * Used when requesting or removing activity detection updates.
      */
     private PendingIntent mActivityDetectionPendingIntent;
+
+    public static final int MSG_ACTION_START = 1;
+    public static final int MSG_ACTION_STOP = 2;
+    public static final int MSG_ACTION_CONFIGURE = 3;
+    public static final int MSG_ACTION_ECHO  = 4;
+    public static final int MSG_ACTION_GETLOCATION = 5;
+    public static final int MSG_ACTION_ADDGEOFENCE = 6;
+    public static final int MSG_ACTION_REMOVEGEOFENCE  = 7;
+    public static final int MSG_ACTION_REMOVEALLGEOFENCES = 8;
+    public static final int MSG_ACTION_NOTIFYABOUT = 9;
     /**
     These settings are the same as the settings for the map. They will in fact give you updates
     at the maximal rates currently possible.
@@ -94,10 +105,13 @@ public class GPStracker extends Service implements ConnectionCallbacks, OnConnec
             .setFastestInterval(Constants.FASTEST_UPDATE_INTERVAL_IN_MILLISECONDS)
             .setPriority(LocationRequest.PRIORITY_BALANCED_POWER_ACCURACY);
     private LocationSettingsRequest.Builder builder;
-    private Meteor mMeteor;
+
+    /**
+     * When binding to the service, we return an interface to our messenger
+     * for sending messages to the service.
+     */
     public IBinder onBind(Intent intent) {
-        Log.i(TAG, "OnBind" + intent);
-        return null;
+        return mMessenger.getBinder();
     }
 
     @Override
@@ -128,8 +142,12 @@ public class GPStracker extends Service implements ConnectionCallbacks, OnConnec
         Log.i(TAG, "Received start id " + startId + ": " + intent);
         // Register the broadcast receiver that informs this activity of the DetectedActivity
         // object broadcast sent by the intent service.
-        user = intent.getStringExtra("userId");
-        Log.i(TAG, "- user: " + user);
+        try {
+            user = intent.getStringExtra("userId");
+            Log.i(TAG, "- user: " + user);
+        } catch (Exception ex){
+
+        }
         LocalBroadcastManager.getInstance(this).registerReceiver(mBroadcastReceiver,
                 new IntentFilter(Constants.BROADCAST_ACTION));
         return START_STICKY;
@@ -216,7 +234,6 @@ public class GPStracker extends Service implements ConnectionCallbacks, OnConnec
     @Override
     public void onDestroy(){
         //clearAllNotify();
-        mMeteor.disconnect();
         removeActivityUpdates();
         removeAllFences();
         stopLocationUpdates();
@@ -264,7 +281,6 @@ public class GPStracker extends Service implements ConnectionCallbacks, OnConnec
         HashMap values = new HashMap();
         values.put("gh", geohash);
         values.put("heading", null);
-        mMeteor.call("postLocation", new Object[]{values});
     }
 
     protected void stopLocationUpdates() {
@@ -304,7 +320,7 @@ public class GPStracker extends Service implements ConnectionCallbacks, OnConnec
      */
     public void removeActivityUpdates(){
         if (!mGoogleApiClient.isConnected()) {
-            Log.i(TAG,"API client needs to be connected before removing activity updates");
+            Log.i(TAG, "API client needs to be connected before removing activity updates");
             return;
         }
 
@@ -383,106 +399,11 @@ public class GPStracker extends Service implements ConnectionCallbacks, OnConnec
         return getSharedPreferences(Constants.SHARED_PREFERENCES_NAME, MODE_PRIVATE);
     }
 
-    /**
-     * sets documentID for each collection
-     * @param subscriptionName
-     * @param documentID
-     */
-    private void setDocumentID(String subscriptionName, String documentID){
-        getSharedPreferencesInstance()
-                .edit()
-                .putString(subscriptionName,documentID)
-                .commit();
-    }
-
-    /**
-     * get documentID for each collection
-     * @param collectionName
-     * @return
-     */
-    private String getDocumentID(String collectionName){
-        return getSharedPreferencesInstance().getString(collectionName, null);
-    }
 
     private void updateDetectedActivitiesList(ArrayList<DetectedActivity> updatedActivities) {
         for (DetectedActivity member : updatedActivities){
             Log.i(TAG,String.valueOf(member));
         }
-    }
-
-    @Override
-    public void onConnect(boolean signedInAutomatically) {
-        //Meteor callback
-        Log.i(TAG,"Meteor:  Connected to Server");
-        Log.i(TAG, "Meteor: Is logged in: "+mMeteor.isLoggedIn());
-        if(signedInAutomatically){
-            Log.i(TAG,"Meteor: Successfully logged in automatically");
-        }else{
-            //mMeteor.loginWithEmail("public@tpolo.com", "Pass1234", new ResultListener()
-            //project @D:\Libraries\Documents\cordova\AndroidDDP
-            mMeteor.loginWithToken("VnyPEWQpAs5r5YBBgdfKlJGI16XpEDEMV-bYsB9YJfr",  new ResultListener() {
-                @Override
-                public void onSuccess(String result) {
-                    Log.i(TAG, "Meteor: Is logged in: " + mMeteor.isLoggedIn());
-                    Log.i(TAG, "Meteor: UserId " + mMeteor.getUserId());
-                }
-
-                @Override
-                public void onError(String error, String reason, String details) {
-                    Log.i(TAG, "Could not log in: " + error + " / " + reason + " / " + details);
-                    return;
-                }
-            });
-        }
-        if(mMeteor.isLoggedIn()){
-            //subscribe to coordinates to add as geofences
-            String  thefences= mMeteor.subscribe("thefences");
-            setDocumentID("thefences",thefences);
-        }
-    }
-
-    @Override
-    public void onDisconnect(int code, String reason) {
-        //Meteor callback
-        Log.i(TAG, "Meteor:  Disconnected from Server");
-    }
-
-    @Override
-    public void onDataAdded(String collectionName, String documentID, String fieldsJson) {
-        //Meteor callback
-        Log.i(TAG,"onDataAdded "+collectionName+"  "+documentID+"  "+fieldsJson);
-        if(collectionName.equals("transActs")){
-            try {
-                JSONObject jsonObj = new JSONObject(fieldsJson);
-                JSONObject request = jsonObj.getJSONObject("request"); // get request object
-                JSONArray srcloc = request.getJSONArray("srcloc");
-                double srcLng = srcloc.getDouble(0);
-                double srcLat = srcloc.getDouble(1);
-                Log.i(TAG,"latitude : "+srcLat+"  longitude: "+srcLng);
-
-            } catch (JSONException e) {
-                e.printStackTrace();
-            }
-        }
-
-    }
-
-    @Override
-    public void onDataChanged(String collectionName, String documentID, String updatedValuesJson, String removedValuesJson) {
-        //Meteor callback
-        Log.i(TAG,"onDataChanged "+collectionName+"  "+documentID+"  "+updatedValuesJson+"  "+removedValuesJson);
-    }
-
-    @Override
-    public void onDataRemoved(String collectionName, String documentID) {
-        //Meteor callback
-        Log.i(TAG,"onDataRemoved  "+collectionName+"  "+documentID);
-    }
-
-    @Override
-    public void onException(Exception e) {
-        //Meteor callback
-        Log.e(TAG, "Meteor Exception " + e.toString());
     }
 
     /**
@@ -609,11 +530,6 @@ public class GPStracker extends Service implements ConnectionCallbacks, OnConnec
                 Log.d("GoogleApiClientConnectService","client is not Connected!!");
             }
 
-            // create a new instance (protocol version in second parameter is optional)
-            mMeteor = new Meteor(GPStracker.this, "ws://192.168.1.156:3000/websocket");
-
-            // register the callback that will handle events and receive messages
-            mMeteor.setCallback(GPStracker.this);
         }
     }
 
@@ -638,5 +554,77 @@ public class GPStracker extends Service implements ConnectionCallbacks, OnConnec
 
         }
     }
+
+    /** Keeps track of all current registered clients. */
+    ArrayList<Messenger> mClients = new ArrayList<Messenger>();
+    /** Holds last value set by a client. */
+    int mValue = 0;
+    /**
+     * Command to the service to register a client, receiving callbacks
+     * from the service.  The Message's replyTo field must be a Messenger of
+     * the client where callbacks should be sent.
+     */
+    public static final int MSG_REGISTER_CLIENT = 1;
+    /**
+     * Command to the service to unregister a client, ot stop receiving callbacks
+     * from the service.  The Message's replyTo field must be a Messenger of
+     * the client as previously given with MSG_REGISTER_CLIENT.
+     */
+    public static final int MSG_UNREGISTER_CLIENT = 2;
+
+    /**
+     * Command to service to set a new value.  This can be sent to the
+     * service to supply a new value, and will be sent by the service to
+     * any registered clients with the new value.
+     */
+    public static final int MSG_SET_VALUE = 3;
+
+    /**
+     * Handler of incoming messages from clients.
+     */
+    private class IncomingHandler extends Handler{
+        @Override
+        public void handleMessage(Message msg) {
+            switch (msg.what) {
+                case MSG_ACTION_ECHO:
+                    Bundle mBundle = msg.getData();
+                    Log.i(TAG, "First Echo : " + mBundle.getString("message"));
+                    Messenger temp = msg.replyTo;
+                    Message resp = Message.obtain(null,MSG_ACTION_ECHO);
+                    resp.setData(mBundle);
+                    try {
+                        temp.send(resp);
+                    } catch (RemoteException e) {
+                        e.printStackTrace();
+                    }
+
+                    break;
+                case MSG_UNREGISTER_CLIENT:
+                    mClients.remove(msg.replyTo);
+                    break;
+                case MSG_SET_VALUE:
+                    mValue = msg.arg1;
+                    for (int i=mClients.size()-1; i>=0; i--) {
+                        try {
+                            mClients.get(i).send(Message.obtain(null,
+                                    MSG_SET_VALUE, mValue, 0));
+                        } catch (RemoteException e) {
+                            // The client is dead.  Remove it from the list;
+                            // we are going through the list from back to front
+                            // so this is safe to do inside the loop.
+                            mClients.remove(i);
+                        }
+                    }
+                    break;
+                default:
+                    super.handleMessage(msg);
+            }
+
+        }
+    }
+    /**
+     * Target we publish for clients to send messages to IncomingHandler.
+     */
+    final Messenger mMessenger = new Messenger(new IncomingHandler());
 }
 

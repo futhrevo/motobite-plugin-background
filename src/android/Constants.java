@@ -87,4 +87,6 @@ public final class Constants {
                 return "Unknown error: the Geofence service is not available now";
         }
     }
+
 }
+
