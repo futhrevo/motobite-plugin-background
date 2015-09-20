@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <plugin xmlns="http://apache.org/cordova/ns/plugins/1.0" xmlns:android="http://schemas.android.com/apk/res/android" 
-	id="com.motobite.cordova.location.plugin" version="0.0.9">
+	id="com.motobite.cordova.location.plugin" version="0.1.0">
 	<name>MBGPS</name>
 	<description>A service for tracking users in background</description>
 	<license>Apache 2.0</license>
@@ -14,6 +14,7 @@
      </js-module>
 	  <!-- android -->
 	 <platform name="android">
+		 <framework src="com.google.android.gms:play-services-location:7.8.0" />
 		 <source-file src="src/android/GPStracker.java" target-dir="src/com/reku/motobite/cordova" />
 		 <source-file src="src/android/GPStrackerHelper.java" target-dir="src/com/reku/motobite/cordova" />
 		 <source-file src="src/android/Constants.java" target-dir="src/com/reku/motobite/cordova" />
