@@ -18,7 +18,6 @@
 		 <source-file src="src/android/GPStracker.java" target-dir="src/com/reku/motobite/cordova" />
 		 <source-file src="src/android/GPStrackerHelper.java" target-dir="src/com/reku/motobite/cordova" />
 		 <source-file src="src/android/Constants.java" target-dir="src/com/reku/motobite/cordova" />
-		 <source-file src="src/android/GeoHashUtils.java" target-dir="src/com/reku/motobite/cordova" />
 		 <source-file src="src/android/DetectedActivitiesIntentService.java" target-dir="src/com/reku/motobite/cordova" />
 		 <source-file src="src/android/GeofenceTransitionsIntentService.java" target-dir="src/com/reku/motobite/cordova" />
 		 <!--<source-file src="src/android/GeofenceErrorMessages.java" target-dir="src/com/reku/motobite/cordova" /> -->

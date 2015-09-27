@@ -1,18 +1,27 @@
 package com.reku.motobite.cordova;
 
 import android.app.IntentService;
+import android.app.Notification;
 import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.media.RingtoneManager;
 import android.net.Uri;
+import android.os.Bundle;
+
 import android.support.v4.app.NotificationCompat;
+import android.support.v4.app.NotificationManagerCompat;
 import android.text.TextUtils;
 import android.util.Log;
 
 import com.google.android.gms.location.Geofence;
 import com.google.android.gms.location.GeofencingEvent;
+import com.motobite.test.MainActivity;
+
+
+import org.json.JSONArray;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -50,23 +59,36 @@ public class GeofenceTransitionsIntentService extends IntentService{
 
         // Get the transition type.
         int geofenceTransition = geofencingEvent.getGeofenceTransition();
-
         // Test that the reported transition was of interest.
         if (geofenceTransition == Geofence.GEOFENCE_TRANSITION_ENTER ||
                 geofenceTransition == Geofence.GEOFENCE_TRANSITION_EXIT) {
+        // Get the geofences that were triggered. A single event can trigger multiple geofences.
+        List<Geofence> triggeringGeofences = geofencingEvent.getTriggeringGeofences();
+        ArrayList<String> triggeringGeofencesIdsList = getGeofenceIdList(triggeringGeofences);
+        try {
+           Bundle data = new Bundle();
+            data.putInt("transition", geofenceTransition);
+            data.putStringArrayList("idList", triggeringGeofencesIdsList);
+            Intent i = new Intent(Constants.BROADCAST_GEOFENCE_RESULT);
+            i.putExtra("geoBundle",data);
+            sendBroadcast(i);
+        }catch (Exception e){
+            e.printStackTrace();
+        }
 
-            // Get the geofences that were triggered. A single event can trigger multiple geofences.
-            List<Geofence> triggeringGeofences = geofencingEvent.getTriggeringGeofences();
+
+
 
             // Get the transition details as a String.
             String geofenceTransitionDetails = getGeofenceTransitionDetails(
                     this,
                     geofenceTransition,
-                    triggeringGeofences
+                    triggeringGeofencesIdsList
             );
+            JSONArray jsonarrayFencesList = new JSONArray(triggeringGeofencesIdsList);
 
             // Send notification and log the transition details.
-            sendNotificationIntent(geofenceTransitionDetails);
+            sendNotificationIntent(geofenceTransitionDetails, jsonarrayFencesList.toString());
             Log.i(TAG, geofenceTransitionDetails);
         }else{
             // Log the error.
@@ -74,25 +96,45 @@ public class GeofenceTransitionsIntentService extends IntentService{
         }
     }
 
-    private void sendNotificationIntent(String geofenceTransitionDetails) {
-        // Create a notification builder that's compatible with platforms >= version 4
-        NotificationCompat.Builder builder =
-                new NotificationCompat.Builder(getApplicationContext());
+    private void sendNotificationIntent(String geofenceTransitionDetails, String jsonarrayFencesListString) {
+        Log.i(TAG,"jsonarrayFencesListString"+ jsonarrayFencesListString);
+        Intent resultIntent = new Intent(this, MainActivity.class);
+        resultIntent.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        resultIntent.putExtra("fences",jsonarrayFencesListString);
+        PendingIntent resultPendingIntent = PendingIntent.getActivity(this, 0, resultIntent, PendingIntent.FLAG_UPDATE_CURRENT);
+
+        PendingIntent pendingCloseIntent = PendingIntent.getActivity(this, 0,  new Intent(this, MainActivity.class)
+                        .setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                        .setAction(Constants.CLOSE_ACTION),
+                0);
         // define sound URI, the sound to be played when there's a notification
         Uri soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
-        // Set the title, text, and icon
-        builder.setContentTitle("MotoBite")
+        // Create a notification builder that's compatible with platforms >= version 4
+        Notification notification = new NotificationCompat.Builder(this)
+                .setContentTitle("MotoBite")
                 .setContentText(geofenceTransitionDetails)
                 .setSmallIcon(android.R.drawable.star_big_on)
                 .setAutoCancel(true)
-                .setSound(soundUri);
+                .setSound(soundUri)
+                .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Close ", pendingCloseIntent)
+                .setContentIntent(resultPendingIntent)
+                .setGroup(Constants.GROUP_GEOFENCE_NOTIFICATIONS)
+                .build();
 
-        // Get an instance of the Notification Manager
-        notifyManager = (NotificationManager)
-                getSystemService(Context.NOTIFICATION_SERVICE);
-        // Build the notification and post it
-        notifyManager.notify(getNotifyIdCount(), builder.build());
+        // Issue the notification
+        NotificationManagerCompat notificationManager =
+                NotificationManagerCompat.from(this);
+        notificationManager.notify(0, notification);
         setNotifyIdCountInc();
+    }
+
+    // Method to get GeofenceIds as ArrayList
+    private ArrayList getGeofenceIdList(List<Geofence> triggeringGeofences){
+        ArrayList triggeringGeofencesIdsList = new ArrayList();
+        for (Geofence geofence : triggeringGeofences) {
+            triggeringGeofencesIdsList.add(geofence.getRequestId());
+        }
+        return triggeringGeofencesIdsList;
     }
 
     /**
@@ -100,21 +142,18 @@ public class GeofenceTransitionsIntentService extends IntentService{
      *
      * @param context               The app context.
      * @param geofenceTransition    The ID of the geofence transition.
-     * @param triggeringGeofences   The geofence(s) triggered.
+     * @param triggeringGeofencesIdsList   The geofence(s) triggered.
      * @return                      The transition details formatted as String.
      */
     private String getGeofenceTransitionDetails(
             Context context,
             int geofenceTransition,
-            List<Geofence> triggeringGeofences) {
+            ArrayList triggeringGeofencesIdsList) {
 
         String geofenceTransitionString = getTransitionString(geofenceTransition);
 
         // Get the Ids of each geofence that was triggered.
-        ArrayList triggeringGeofencesIdsList = new ArrayList();
-        for (Geofence geofence : triggeringGeofences) {
-            triggeringGeofencesIdsList.add(geofence.getRequestId());
-        }
+
         String triggeringGeofencesIdsString = TextUtils.join(", ", triggeringGeofencesIdsList);
 
         return geofenceTransitionString + ": " + triggeringGeofencesIdsString;

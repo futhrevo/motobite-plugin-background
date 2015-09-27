@@ -1,6 +1,7 @@
 package com.reku.motobite.cordova;
 
 import android.annotation.SuppressLint;
+import android.app.Notification;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
@@ -31,8 +32,6 @@ import com.google.android.gms.common.api.ResultCallback;
 import com.google.android.gms.common.api.Status;
 import com.google.android.gms.location.ActivityRecognition;
 import com.google.android.gms.location.DetectedActivity;
-import com.google.android.gms.location.Geofence;
-import com.google.android.gms.location.GeofencingRequest;
 import com.google.android.gms.location.LocationListener;
 import com.google.android.gms.location.LocationRequest;
 import com.google.android.gms.location.LocationServices;
@@ -40,14 +39,16 @@ import com.google.android.gms.location.LocationSettingsRequest;
 import com.google.android.gms.location.LocationSettingsResult;
 import com.google.android.gms.location.LocationSettingsStates;
 import com.google.android.gms.location.LocationSettingsStatusCodes;
+import com.motobite.test.MainActivity;
 
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
-
+import java.util.List;
 
 /**
  * Created by rakeshkalyankar on 28/05/15.
@@ -61,18 +62,6 @@ public class GPStracker extends Service implements ConnectionCallbacks, OnConnec
     private String user = "tester1";
 
     /**
-     * The list of geofences used in this sample
-     */
-    protected ArrayList<Geofence> mGeofenceList;
-    /**
-     * Used to keep track of whether geofences were added
-     */
-    private boolean mGeofencesAdded;
-    /**
-     * Used when requesting to add or remove geofences
-     */
-    private PendingIntent mGeofencePendingIntent;
-    /**
      * A receiver for DetectedActivity objects broadcast by the
      * {@code ActivityDetectionIntentService}.
      */
@@ -82,15 +71,7 @@ public class GPStracker extends Service implements ConnectionCallbacks, OnConnec
      */
     private PendingIntent mActivityDetectionPendingIntent;
 
-    public static final int MSG_ACTION_START = 1;
-    public static final int MSG_ACTION_STOP = 2;
-    public static final int MSG_ACTION_CONFIGURE = 3;
-    public static final int MSG_ACTION_ECHO  = 4;
-    public static final int MSG_ACTION_GETLOCATION = 5;
-    public static final int MSG_ACTION_ADDGEOFENCE = 6;
-    public static final int MSG_ACTION_REMOVEGEOFENCE  = 7;
-    public static final int MSG_ACTION_REMOVEALLGEOFENCES = 8;
-    public static final int MSG_ACTION_NOTIFYABOUT = 9;
+
     /**
     These settings are the same as the settings for the map. They will in fact give you updates
     at the maximal rates currently possible.
@@ -117,14 +98,9 @@ public class GPStracker extends Service implements ConnectionCallbacks, OnConnec
     @Override
     public void onCreate(){
         super.onCreate();
-        // Empty list for storing geofences.
-        mGeofenceList = new ArrayList<Geofence>();
-        // Initially set the PendingIntent used in addGeofences() and removeGeofences() to null
-        mGeofencePendingIntent = null;
+
         // Retrieve an instance of SharedPreferences object
         getSharedPreferencesInstance();
-        // Get the value of mGeofencesAdded
-        mGeofencesAdded = getSharedPreferencesInstance().getBoolean(Constants.GEOFENCES_ADDED_KEY,false);
         // Get an instance of the Notification Manager
         if(notifyManager == null){
             notifyManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
@@ -142,12 +118,6 @@ public class GPStracker extends Service implements ConnectionCallbacks, OnConnec
         Log.i(TAG, "Received start id " + startId + ": " + intent);
         // Register the broadcast receiver that informs this activity of the DetectedActivity
         // object broadcast sent by the intent service.
-        try {
-            user = intent.getStringExtra("userId");
-            Log.i(TAG, "- user: " + user);
-        } catch (Exception ex){
-
-        }
         LocalBroadcastManager.getInstance(this).registerReceiver(mBroadcastReceiver,
                 new IntentFilter(Constants.BROADCAST_ACTION));
         return START_STICKY;
@@ -185,26 +155,15 @@ public class GPStracker extends Service implements ConnectionCallbacks, OnConnec
                         break;
                     case LocationSettingsStatusCodes.RESOLUTION_REQUIRED:
                         // Location settings are not satisfied. If getActivity is available it could be fixed by showing the user a dialog
-                        showNotification();
+                        //showNotification();
+
                         break;
                 }
             }
         });
 
-        LocationServices.FusedLocationApi.requestLocationUpdates(mGoogleApiClient, REQUESTHIGH, this);  // LocationListener
-        requestActivityUpdates();
-
-        try{
-            LocationServices.GeofencingApi.addGeofences(mGoogleApiClient,
-                    getGeofencingRequest(buildGeofenceObject("Home", 14.6750928, 77.5920952)),
-                    getGeofencePendingIntent()).setResultCallback(new fenceResults());
-            LocationServices.GeofencingApi.addGeofences(mGoogleApiClient,
-                    getGeofencingRequest(buildGeofenceObject("ATP", 14.6750928, 77.5920952)),
-                    getGeofencePendingIntent()).setResultCallback(new fenceResults());
-        }catch (SecurityException securityException){
-            // Catch exception generated if the app does not use ACCESS_FINE_LOCATION permission.
-        }
-
+        //LocationServices.FusedLocationApi.requestLocationUpdates(mGoogleApiClient, REQUESTHIGH, this);  // LocationListener
+        //requestActivityUpdates();
     }
 
 
@@ -235,7 +194,6 @@ public class GPStracker extends Service implements ConnectionCallbacks, OnConnec
     public void onDestroy(){
         //clearAllNotify();
         removeActivityUpdates();
-        removeAllFences();
         stopLocationUpdates();
         // Unregister the broadcast receiver that was registered during onResume().
         LocalBroadcastManager.getInstance(this).unregisterReceiver(mBroadcastReceiver);
@@ -257,10 +215,9 @@ public class GPStracker extends Service implements ConnectionCallbacks, OnConnec
      */
     private void showNotification() {
         // Set the Intent action to open Location Settings
-        Intent gpsIntent = new Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS);
+        Intent appIntent =  new Intent(this, MainActivity.class);
         // Create a PendingIntent to start an Activity
-        PendingIntent pendingIntent = PendingIntent.getActivity(getApplicationContext(), 2, gpsIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT);
+        PendingIntent pendingIntent = PendingIntent.getActivity(getApplicationContext(), 0, appIntent, PendingIntent.FLAG_UPDATE_CURRENT);
         // Create a notification builder that's compatible with platforms >= version 4
         NotificationCompat.Builder builder =
                 new NotificationCompat.Builder(getApplicationContext());
@@ -271,16 +228,29 @@ public class GPStracker extends Service implements ConnectionCallbacks, OnConnec
                 .setSmallIcon(android.R.drawable.ic_menu_mylocation)
                 .setAutoCancel(true)
                         // Get the Intent that starts the Location settings panel
-                .setContentIntent(pendingIntent);
+                .setContentIntent(pendingIntent)
+                .setOngoing(true);
 
         // Build the notification and post it
         notifyManager.notify(0, builder.build());
     }
     private void doAction(Location location){
-        String geohash = GeoHashUtils.encode(location.getLatitude(), location.getLongitude());
-        HashMap values = new HashMap();
-        values.put("gh", geohash);
-        values.put("heading", null);
+        Log.i(TAG,"Do some action with the location");
+        JSONObject packedLoc = Constants.returnLocationJSON(location);
+        Bundle extras = new Bundle();
+        extras.putString("location",packedLoc.toString());
+        Message resp = Message.obtain(null,Constants.MSG_POST_LOCATION);
+        resp.setData(extras);
+        for (int i=mClients.size()-1; i>=0; i--) {
+            try {
+                mClients.get(i).send(resp);
+            } catch (RemoteException e) {
+                // The client is dead.  Remove it from the list;
+                // we are going through the list from back to front
+                // so this is safe to do inside the loop.
+                mClients.remove(i);
+            }
+        }
     }
 
     protected void stopLocationUpdates() {
@@ -418,18 +388,18 @@ public class GPStracker extends Service implements ConnectionCallbacks, OnConnec
             Log.i(TAG,"Broadcast received");
             ArrayList<DetectedActivity> updatedActivities =
                     intent.getParcelableArrayListExtra(Constants.ACTIVITY_EXTRA);
-            DetectedActivity mostProable = intent.getParcelableExtra(Constants.ACTIVITY_PROBABLE);
+            DetectedActivity mostProbable = intent.getParcelableExtra(Constants.ACTIVITY_PROBABLE);
             updateDetectedActivitiesList(updatedActivities);
-            updateLocationMode(mostProable);
+            updateLocationMode(mostProbable);
         }
 
 
     }
 
-    private void updateLocationMode(DetectedActivity proable) {
-        Log.i(TAG, String.valueOf(proable));
-        if(proable.getConfidence() > 60){
-            switch (proable.getType()){
+    private void updateLocationMode(DetectedActivity probable) {
+        Log.i(TAG, String.valueOf(probable));
+        if(probable.getConfidence() > 60){
+            switch (probable.getType()){
                 case DetectedActivity.STILL:
                     LocationServices.FusedLocationApi.requestLocationUpdates(mGoogleApiClient, REQUESTLOW, this);  // LocationListener
                     break;
@@ -440,71 +410,6 @@ public class GPStracker extends Service implements ConnectionCallbacks, OnConnec
         }
 
     }
-    /**
-     * Method to build Geofence object based on location
-     */
-    public Geofence buildGeofenceObject(String id, double lat, double lng ){
-        return (new Geofence.Builder()
-                // set the request ID for the geofence. This is a string to identify this geofence
-                .setRequestId(id)
-                // set loitering delay for dwell
-                .setLoiteringDelay(Constants.GEOFENCE_LOITERING_DELAY)
-                // set the time delay for triggering notification
-                .setNotificationResponsiveness(Constants.GEOFENCE_RESPONSE)
-                // set the circular region of this geofence
-                .setCircularRegion(lat, lng, Constants.GEOFENCE_RADIUS_IN_METERS)
-                // set the expiration duration of the geofence. This geofence gets automatically removed after this period of time
-                .setExpirationDuration(Constants.GEOFENCE_EXPIRATION_IN_MILLISECONDS)
-                // set the transition types of interest. Alerts are only generated for these transitions.
-                .setTransitionTypes(Geofence.GEOFENCE_TRANSITION_ENTER | Geofence.GEOFENCE_TRANSITION_EXIT)
-                // Create the geofence
-                .build());
-    }
-    /**
-     * Builds and returns a GeofencingRequest. Specifies  geofence to be monitored. ALso specifies how the geofence notifications are initially triggered
-     */
-    private GeofencingRequest getGeofencingRequest(Geofence geofence){
-        GeofencingRequest.Builder builder = new GeofencingRequest.Builder();
-        // The INITIAL_TRIGGER_ENTER flag indicates that geofencing service should trigger a
-        // GEOFENCE_TRANSITION_ENTER notification when the geofence is added and if the device
-        // is already inside that geofence.
-        builder.setInitialTrigger(GeofencingRequest.INITIAL_TRIGGER_ENTER);
-        // Add the geofences to be monitored by geofencing service.
-        builder.addGeofence(geofence);
-        // Return a GeofencingRequest.
-        return builder.build();
-    }
-    /**
-     * Gets a PendingIntent to send with the request to add or remove Geofences. Location Services
-     * issues the Intent inside this PendingIntent whenever a geofence transition occurs for the
-     * current list of geofences.
-     *
-     * @return A PendingIntent for the IntentService that handles geofence transitions.
-     */
-    private PendingIntent getGeofencePendingIntent() {
-        // Reuse the PendingIntent if we already have it.
-        if (mGeofencePendingIntent != null) {
-            return mGeofencePendingIntent;
-        }
-        Intent intent = new Intent(this, GeofenceTransitionsIntentService.class);
-        // We use FLAG_UPDATE_CURRENT so that we get the same pending intent back when calling
-        // addGeofences() and removeGeofences().
-        return PendingIntent.getService(this, 1, intent, PendingIntent.FLAG_UPDATE_CURRENT);
-    }
-    public void removeAllFences(){
-        try{
-            LocationServices.GeofencingApi.removeGeofences(mGoogleApiClient,getGeofencePendingIntent()).setResultCallback(new ResultCallback<Status>() {
-                @Override
-                public void onResult(Status status) {
-                    Log.i(TAG,"removed all geofences");
-                }
-            });
-        }catch (SecurityException securityException){
-
-        }
-
-    }
-
     /**
      * GoogleApiClient thread for connection to a GoogleApiClient#blockingConnect
      * moves into a separate thread because UI can not be blocked .
@@ -525,59 +430,20 @@ public class GPStracker extends Service implements ConnectionCallbacks, OnConnec
             //We want this service to continue running until it is explicitly stopped
             mGoogleApiClient.blockingConnect();
             if(mGoogleApiClient.isConnected()){
-                Log.d("GoogleApiClientConnectService","client is Connected");
+                Log.d("GoogleApiClientConnectService", "client is Connected");
             }else{
-                Log.d("GoogleApiClientConnectService","client is not Connected!!");
+                Log.d("GoogleApiClientConnectService", "client is not Connected!!");
             }
 
         }
     }
 
-    private class fenceResults implements ResultCallback<Status> {
-        private final String TAG = fenceResults.class.getSimpleName();
-        @Override
-        public void onResult(Status status) {
-            Log.i(TAG, "Geofence status");
-            if (status.isSuccess()) {
-                Toast.makeText(
-                        GPStracker.this,
-                        "Geofences Added",
-                        Toast.LENGTH_SHORT
-                ).show();
-            }else{
-                // Get the status code for the error and log it using a user-friendly message.
-                String errorMessage = Constants.getGeofenceErrorString(GPStracker.this,
-                        status.getStatusCode());
-                Log.e(TAG, errorMessage);
-            }
 
-
-        }
-    }
 
     /** Keeps track of all current registered clients. */
     ArrayList<Messenger> mClients = new ArrayList<Messenger>();
     /** Holds last value set by a client. */
     int mValue = 0;
-    /**
-     * Command to the service to register a client, receiving callbacks
-     * from the service.  The Message's replyTo field must be a Messenger of
-     * the client where callbacks should be sent.
-     */
-    public static final int MSG_REGISTER_CLIENT = 1;
-    /**
-     * Command to the service to unregister a client, ot stop receiving callbacks
-     * from the service.  The Message's replyTo field must be a Messenger of
-     * the client as previously given with MSG_REGISTER_CLIENT.
-     */
-    public static final int MSG_UNREGISTER_CLIENT = 2;
-
-    /**
-     * Command to service to set a new value.  This can be sent to the
-     * service to supply a new value, and will be sent by the service to
-     * any registered clients with the new value.
-     */
-    public static final int MSG_SET_VALUE = 3;
 
     /**
      * Handler of incoming messages from clients.
@@ -585,12 +451,13 @@ public class GPStracker extends Service implements ConnectionCallbacks, OnConnec
     private class IncomingHandler extends Handler{
         @Override
         public void handleMessage(Message msg) {
+
             switch (msg.what) {
-                case MSG_ACTION_ECHO:
+                case Constants.MSG_ACTION_ECHO:
                     Bundle mBundle = msg.getData();
                     Log.i(TAG, "First Echo : " + mBundle.getString("message"));
                     Messenger temp = msg.replyTo;
-                    Message resp = Message.obtain(null,MSG_ACTION_ECHO);
+                    Message resp = Message.obtain(null,Constants.MSG_ACTION_ECHO);
                     resp.setData(mBundle);
                     try {
                         temp.send(resp);
@@ -599,15 +466,21 @@ public class GPStracker extends Service implements ConnectionCallbacks, OnConnec
                     }
 
                     break;
-                case MSG_UNREGISTER_CLIENT:
+                case Constants.MSG_POST_LOCATION:
+
+                    break;
+                case  Constants.MSG_REGISTER_CLIENT:
+                    mClients.add(msg.replyTo);
+                    break;
+                case Constants.MSG_UNREGISTER_CLIENT:
                     mClients.remove(msg.replyTo);
                     break;
-                case MSG_SET_VALUE:
+                case Constants.MSG_SET_VALUE:
                     mValue = msg.arg1;
                     for (int i=mClients.size()-1; i>=0; i--) {
                         try {
                             mClients.get(i).send(Message.obtain(null,
-                                    MSG_SET_VALUE, mValue, 0));
+                                    Constants.MSG_SET_VALUE, mValue, 0));
                         } catch (RemoteException e) {
                             // The client is dead.  Remove it from the list;
                             // we are going through the list from back to front
