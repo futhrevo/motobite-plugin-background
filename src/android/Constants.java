@@ -54,6 +54,10 @@ public final class Constants {
 
     public static final int MSG_POST_LOCATION = 110;
 
+    public static final int SAFEHOUSE = 1;
+    public static final int PICKUP = 2;
+    public static final int POI = 3;
+
     public static final String CLOSE_ACTION = "close";
 
     /**

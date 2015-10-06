@@ -39,7 +39,7 @@ import com.google.android.gms.location.LocationSettingsRequest;
 import com.google.android.gms.location.LocationSettingsResult;
 import com.google.android.gms.location.LocationSettingsStates;
 import com.google.android.gms.location.LocationSettingsStatusCodes;
-import com.motobite.test.MainActivity;
+import com.futrevo.reku.motobite.MainActivity;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -56,7 +56,7 @@ import java.util.List;
 public class GPStracker extends Service implements ConnectionCallbacks, OnConnectionFailedListener, LocationListener, ResultCallback<Status> {
     //TODO: Implement location listener provider method to know the status of gps provider
     private static final String TAG = GPStracker.class.getSimpleName();
-    private GoogleApiClient mGoogleApiClient;
+    private static GoogleApiClient mGoogleApiClient;
     private NotificationManager notifyManager;
     private Location mCurrentLocation;
     private String user = "tester1";
@@ -399,9 +399,10 @@ public class GPStracker extends Service implements ConnectionCallbacks, OnConnec
     private void updateLocationMode(DetectedActivity probable) {
         Log.i(TAG, String.valueOf(probable));
         if(probable.getConfidence() > 60){
+            Log.i(TAG, "activity detected with more than 60% confidence ");
             switch (probable.getType()){
                 case DetectedActivity.STILL:
-                    LocationServices.FusedLocationApi.requestLocationUpdates(mGoogleApiClient, REQUESTLOW, this);  // LocationListener
+                    //LocationServices.FusedLocationApi.requestLocationUpdates(mGoogleApiClient, REQUESTLOW, this);  // LocationListener
                     break;
                 default:
                     LocationServices.FusedLocationApi.requestLocationUpdates(mGoogleApiClient, REQUESTHIGH, this);  // LocationListener
@@ -441,9 +442,9 @@ public class GPStracker extends Service implements ConnectionCallbacks, OnConnec
 
 
     /** Keeps track of all current registered clients. */
-    ArrayList<Messenger> mClients = new ArrayList<Messenger>();
+    static ArrayList<Messenger> mClients = new ArrayList<Messenger>();
     /** Holds last value set by a client. */
-    int mValue = 0;
+    static int mValue = 0;
 
     /**
      * Handler of incoming messages from clients.
@@ -468,6 +469,14 @@ public class GPStracker extends Service implements ConnectionCallbacks, OnConnec
                     break;
                 case Constants.MSG_POST_LOCATION:
 
+                    break;
+                case Constants.MSG_ACTION_START:
+                    LocationServices.FusedLocationApi.requestLocationUpdates(mGoogleApiClient, REQUESTHIGH, GPStracker.this);  // LocationListener
+                    requestActivityUpdates();
+                    break;
+                case Constants.MSG_ACTION_STOP:
+                    stopLocationUpdates();
+                    removeActivityUpdates();
                     break;
                 case  Constants.MSG_REGISTER_CLIENT:
                     mClients.add(msg.replyTo);

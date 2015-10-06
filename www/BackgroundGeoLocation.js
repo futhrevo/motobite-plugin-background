@@ -4,11 +4,15 @@ module.exports = {
     config: {},
 
     start: function (config, success, failure) {
+        this.config = config;
+        if (!config.background) {
+            throw "www - to start location, background flag is set";
+        }
         exec(success || function () { },
             failure || function () { },
             'BackgroundGeoLocation',
             'start',
-            []);
+            [config]);
     },
     stop: function (config, success, failure) {
         exec(success || function () { },

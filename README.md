@@ -14,3 +14,10 @@ var success = function(obj){Date.now() + console.log(obj)}
 var failure = function(){"failed"}
 mb.configure()
 mb.addGeofence(config,success,failure)
+cordova.exec(success,failure,'BackgroundGeoLocation','start',[{background:true}])
+mb.stop({},success,failure)
+com.motobite.cordova.location.plugin@file://../cordova/motobite-plugin-background
+
+TODO:
+COrrect MainActivity.class path
+setGroup in GeofenceTransitionIntentService.java is unknown symbol

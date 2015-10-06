@@ -54,6 +54,7 @@ import org.json.JSONObject;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 
@@ -69,15 +70,20 @@ public class GPStrackerHelper extends CordovaPlugin implements GoogleApiClient.C
     private static final float MIN_LAST_READ_ACCURACY = 500.0f;
 
     private String getLocationCallbackId;
-    private String updateLocationCallbackId;
+    private static String updateLocationCallbackId;
+
     private Intent updateServiceIntent;
-    private boolean isEnabled = false;
+    public static boolean isEnabled = false;
+    public static boolean isInsideSafeHouse = false;
+    public static boolean isInsidePickup = false;
+    public static boolean isInsidePoi = false;
     private String stopOnTerminate = "false";
-    private HashMap<Integer,JSONObject> callbackHashMap = new HashMap<Integer,JSONObject>();
+    private static HashMap<Integer,JSONObject> callbackHashMap = new HashMap<Integer,JSONObject>();
     public HashMap<String,String> safeHouses = new HashMap<String,String>();
     public HashMap<String,String> pickup = new HashMap<String, String>();
     public HashMap<String,String> poi = new HashMap<String, String>();
 
+    public static boolean isBackgroundUpdatesRequired = false;
     /**
      * The list of geofences used in this sample
      */
@@ -133,6 +139,16 @@ public class GPStrackerHelper extends CordovaPlugin implements GoogleApiClient.C
     public void onPause(boolean multitasking) {
         super.onPause(multitasking);
         Log.i(TAG, "TODO: handle onPause Called, handle the functions");
+        if (isBackgroundUpdatesRequired && isEnabled){
+            Message request = Message.obtain();
+            request.what = Constants.MSG_ACTION_STOP;
+            request.replyTo = mMessenger;
+            try {
+                mService.send(request);
+            } catch (RemoteException e) {
+                e.printStackTrace();
+            }
+        }
     }
 
     @Override
@@ -141,6 +157,16 @@ public class GPStrackerHelper extends CordovaPlugin implements GoogleApiClient.C
         if(mGApiClient != null){
             if (!mGApiClient.isConnected() || !mGApiClient.isConnecting()){
                 mGApiClient.connect();
+            }
+        }
+        if (isBackgroundUpdatesRequired && isEnabled){
+            Message request = Message.obtain();
+            request.what = Constants.MSG_ACTION_START;
+            request.replyTo = mMessenger;
+            try {
+                mService.send(request);
+            } catch (RemoteException e) {
+                e.printStackTrace();
             }
         }
         Log.i(TAG, "TODO: handle onResume");
@@ -176,6 +202,13 @@ public class GPStrackerHelper extends CordovaPlugin implements GoogleApiClient.C
                 break;
         }
     }
+
+    @Override
+    public boolean onOverrideUrlLoading(String url) {
+        Log.i(TAG,url);
+        return super.onOverrideUrlLoading(url);
+    }
+
     public boolean execute(final String action, final JSONArray data, final CallbackContext callbackContext) throws JSONException{
         Boolean result = false;
         if (this.constants == null){
@@ -264,10 +297,22 @@ public class GPStrackerHelper extends CordovaPlugin implements GoogleApiClient.C
                         }else if (Constants.ACTION_START.equalsIgnoreCase(action) && !isEnabled) {
                             Log.i(TAG, "start called - sending task to execute thread");
                             isEnabled = true;
+                            final JSONObject cfg = data.getJSONObject(0);
+                            Log.i(TAG,cfg.toString());
+                            isBackgroundUpdatesRequired = cfg.getBoolean("background");
+                            Log.i(TAG, "does background updates required : " + isBackgroundUpdatesRequired);
                             cordova.getThreadPool().execute(new Runnable() {
                                 @Override
                                 public void run() {
                                     updateLocationCallbackId = callbackContext.getCallbackId();
+                                    Message request = Message.obtain();
+                                    request.what = Constants.MSG_ACTION_START;
+                                    request.replyTo = mMessenger;
+                                    try {
+                                        mService.send(request);
+                                    } catch (RemoteException e) {
+                                        e.printStackTrace();
+                                    }
                                 }
                             });
 
@@ -278,11 +323,17 @@ public class GPStrackerHelper extends CordovaPlugin implements GoogleApiClient.C
                                 @Override
                                 public void run() {
                                     updateLocationCallbackId = null;
-                                    callbackContext.success();
+                                    Message request = Message.obtain();
+                                    request.what = Constants.MSG_ACTION_STOP;
+                                    request.replyTo = mMessenger;
+                                    try {
+                                        mService.send(request);
+                                        callbackContext.success();
+                                    } catch (RemoteException e) {
+                                        e.printStackTrace();
+                                    }
                                 }
                             });
-                        } else if (Constants.ACTION_CONFIGURE.equalsIgnoreCase(action)) {
-
                         } else {
                             Log.d(TAG, "Execution should not come here, check");
                         }
@@ -309,6 +360,7 @@ public class GPStrackerHelper extends CordovaPlugin implements GoogleApiClient.C
         // TODO: find out if it is really required to do this
         removeAllFences(null);
         cordova.getActivity().unregisterReceiver(geofencingReceiver);
+
         super.onDestroy();
 
     }
@@ -366,7 +418,7 @@ public class GPStrackerHelper extends CordovaPlugin implements GoogleApiClient.C
     /**
      * Handler of incoming messages from service.
      */
-    private Handler IncomingHandler = new Handler() {
+    private static Handler IncomingHandler = new Handler() {
         @Override
         public void handleMessage(Message msg) {
             Boolean keep;
@@ -506,7 +558,7 @@ public class GPStrackerHelper extends CordovaPlugin implements GoogleApiClient.C
 
     }
 
-    private String getCallback(Integer code, Boolean keep){
+    private static String getCallback(Integer code, Boolean keep){
         if(callbackHashMap.containsKey(code)){
             JSONObject temp = new JSONObject();
             temp = callbackHashMap.get(code);
@@ -569,7 +621,7 @@ public class GPStrackerHelper extends CordovaPlugin implements GoogleApiClient.C
 
 
     private boolean isGPSdisabled() {
-        boolean gps_enabled = false;
+        boolean gps_enabled;
         LocationManager lm = (LocationManager) this.cordova.getActivity().getSystemService(Context.LOCATION_SERVICE);
         try {
             gps_enabled = lm.isProviderEnabled(LocationManager.GPS_PROVIDER);
@@ -657,7 +709,7 @@ public class GPStrackerHelper extends CordovaPlugin implements GoogleApiClient.C
         // Get the transition type.
         int geofenceTransition = fenceBundle.getInt("transition",-1);
         // Get the geofences that were triggered. A single event can trigger multiple geofences.
-        ArrayList triggeringGeofencesIdsList = fenceBundle.getStringArrayList("idList");
+        ArrayList<String> triggeringGeofencesIdsList = fenceBundle.getStringArrayList("idList");
         // Test that the reported transition was of interest.
         if (geofenceTransition == Geofence.GEOFENCE_TRANSITION_ENTER){
             didEnterGeofence(triggeringGeofencesIdsList);
@@ -670,7 +722,22 @@ public class GPStrackerHelper extends CordovaPlugin implements GoogleApiClient.C
     private  void didEnterGeofence(ArrayList<String> triggeringGeofences){
         for (String geofenceId : triggeringGeofences) {
             Log.i(TAG,"Geofence Entered "+ geofenceId);
-            String callbackId = getGeofenceCallbackWithId(geofenceId);
+            int type =  getGeofenceType(geofenceId);
+            switch (type){
+                case Constants.SAFEHOUSE:
+                    isInsideSafeHouse = true;
+                    break;
+                case Constants.PICKUP:
+                    isInsidePickup = true;
+                    break;
+                case Constants.POI:
+                    isInsidePoi = true;
+                    break;
+                default:
+                    Log.i(TAG,"unknown type detected in Geofence Entry");
+                    break;
+            }
+            String callbackId = getGeofenceCallbackWithId(type,geofenceId);
             JSONObject o = new JSONObject();
             try {
                 o.put("transition","enter");
@@ -684,11 +751,39 @@ public class GPStrackerHelper extends CordovaPlugin implements GoogleApiClient.C
                 e.printStackTrace();
             }
         }
+        if (isInsideSafeHouse){
+            Log.i(TAG,"Inside a safehouse");
+            if (isEnabled && isBackgroundUpdatesRequired){
+
+            }
+        }
+        if(isInsidePickup){
+            Log.i(TAG,"Inside a pickup location");
+        }
+        if(isInsidePoi){
+            Log.i(TAG,"Inside a POI");
+        }
+
     }
     private  void didExitGeofence(ArrayList<String> triggeringGeofences){
         for (String geofenceId : triggeringGeofences) {
             Log.i(TAG,"Geofence Exit "+ geofenceId);
-            String callbackId = getGeofenceCallbackWithId(geofenceId);
+            int type =  getGeofenceType(geofenceId);
+            switch (type){
+                case Constants.SAFEHOUSE:
+                    isInsideSafeHouse = false;
+                    break;
+                case Constants.PICKUP:
+                    isInsidePickup = false;
+                    break;
+                case Constants.POI:
+                    isInsidePoi = false;
+                    break;
+                default:
+                    Log.i(TAG,"unknown type detected in Geofence Exit");
+                    break;
+            }
+            String callbackId = getGeofenceCallbackWithId(type,geofenceId);
             JSONObject o = new JSONObject();
             try {
                 o.put("transition","exit");
@@ -702,20 +797,41 @@ public class GPStrackerHelper extends CordovaPlugin implements GoogleApiClient.C
                 e.printStackTrace();
             }
         }
+        if (!isInsideSafeHouse){
+            Log.i(TAG,"Outside a safehouse");
+        }
+        if(!isInsidePickup){
+            Log.i(TAG,"Outside a pickup location");
+        }
+        if(!isInsidePoi){
+            Log.i(TAG,"Outside a POI");
+        }
     }
-    private String getGeofenceCallbackWithId(String id){
+    private String getGeofenceCallbackWithId(int type,String id){
         String res = null;
-        if (safeHouses.containsKey(id)){
+        if(type == Constants.SAFEHOUSE){
             res = safeHouses.get(id);
-        }else if(pickup.containsKey(id)){
+        } else if(type == Constants.PICKUP){
             res = pickup.get(id);
-        }else if(poi.containsKey(id)){
+        } else if(type == Constants.POI){
             res = poi.get(id);
         }
         return res;
     }
+    private int getGeofenceType(String id){
+        int res = 0;
+        if (safeHouses.containsKey(id)){
+            res = Constants.SAFEHOUSE;
+        }else if(pickup.containsKey(id)){
+            res = Constants.PICKUP;
+        }else if(poi.containsKey(id)){
+            res = Constants.POI;
+        }
+        return res;
+    }
+    // TODO: Before removal check if the user is in geofence
     private boolean removeGeofenceWithId(String id){
-        String res = null;
+        String res;
         if (safeHouses.containsKey(id)){
             res = safeHouses.get(id);
             safeHouses.remove(id);
@@ -807,9 +923,9 @@ public class GPStrackerHelper extends CordovaPlugin implements GoogleApiClient.C
             LocationServices.GeofencingApi.addGeofences(mGApiClient,
                     getGeofencingRequest(buildGeofenceObject(id, lat, lng,radius)),
                     getGeofencePendingIntent()).setResultCallback(new fenceResults());
-            if (type == "safeHouse"){
+            if (type.equalsIgnoreCase("safeHouse")){
                 safeHouses.put(id,callbackId);
-            } else if (type == "pickup"){
+            } else if (type.equalsIgnoreCase("pickup")){
                 pickup.put(id,callbackId);
             } else{
                 poi.put(id,callbackId);
@@ -823,7 +939,7 @@ public class GPStrackerHelper extends CordovaPlugin implements GoogleApiClient.C
         return false;
     }
     public void removeGeofence(String id){
-        List<String> toDeleteList = Arrays.asList(id);
+        List<String> toDeleteList = Collections.singletonList(id);
         try{
             if(toDeleteList.size() > 0){
                 LocationServices.GeofencingApi.removeGeofences(mGApiClient,toDeleteList);

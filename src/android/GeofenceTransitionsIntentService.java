@@ -18,7 +18,7 @@ import android.util.Log;
 
 import com.google.android.gms.location.Geofence;
 import com.google.android.gms.location.GeofencingEvent;
-import com.motobite.test.MainActivity;
+import com.futrevo.reku.motobite.MainActivity;
 
 
 import org.json.JSONArray;
@@ -118,7 +118,6 @@ public class GeofenceTransitionsIntentService extends IntentService{
                 .setSound(soundUri)
                 .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Close ", pendingCloseIntent)
                 .setContentIntent(resultPendingIntent)
-                .setGroup(Constants.GROUP_GEOFENCE_NOTIFICATIONS)
                 .build();
 
         // Issue the notification
