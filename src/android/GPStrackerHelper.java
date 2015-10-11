@@ -78,6 +78,7 @@ public class GPStrackerHelper extends CordovaPlugin implements GoogleApiClient.C
     public static boolean isInsideSafeHouse = false;
     public static boolean isInsidePickup = false;
     public static boolean isInsidePoi = false;
+    public static boolean isLocationDialogShowing = false;
     private String stopOnTerminate = "false";
     private static HashMap<Integer,JSONObject> callbackHashMap = new HashMap<Integer,JSONObject>();
     public HashMap<String,String> safeHouses = new HashMap<String,String>();
@@ -211,6 +212,7 @@ public class GPStrackerHelper extends CordovaPlugin implements GoogleApiClient.C
                     default:
                         break;
                 }
+                isLocationDialogShowing = false;
                 break;
             default:
                 break;
@@ -369,12 +371,13 @@ public class GPStrackerHelper extends CordovaPlugin implements GoogleApiClient.C
     }
     @Override
     public void onDestroy(){
-        Log.i(TAG,"onDestroy called");
+        Log.i(TAG, "onDestroy called");
         doUnbindService();
         // TODO: find out if it is really required to do this
         removeAllFences(null);
         cordova.getActivity().unregisterReceiver(geofencingReceiver);
-
+        cordova.getActivity().unregisterReceiver(activityReceiver);
+        executeStop();
         super.onDestroy();
 
     }
@@ -393,16 +396,11 @@ public class GPStrackerHelper extends CordovaPlugin implements GoogleApiClient.C
         });
     }
 
-    private void executeStop(final CallbackContext callbackContext){
-        Log.d(TAG, "Google Play services getting stopped");
-        final Activity activity = this.cordova.getActivity();
-        cordova.getActivity().runOnUiThread(new Runnable() {
-            @Override
-            public void run() {
-                activity.stopService(updateServiceIntent);
-                callbackContext.success();
-            }
-        });
+    private void executeStop(){
+        Log.d(TAG, "Stopping the geolocation service");
+        Context context = this.cordova.getActivity().getApplicationContext();
+        Intent serviceIntent = new Intent(this.cordova.getActivity(),GPStracker.class);
+        context.stopService(serviceIntent);
     }
 
     private void sendLastLocation(){
@@ -594,7 +592,9 @@ public class GPStrackerHelper extends CordovaPlugin implements GoogleApiClient.C
     }
     public void _checkLocationSettings() {
         //LocationRequest mLocationRequestBalancedPowerAccuracy = LocationRequest.create().setPriority(LocationRequest.PRIORITY_BALANCED_POWER_ACCURACY);
-
+        if (isLocationDialogShowing){
+            return;
+        }
         LocationSettingsRequest.Builder builder = new LocationSettingsRequest.Builder().addLocationRequest(mLocationRequestHighAccuracy);
         builder.setAlwaysShow(true);
 
@@ -618,6 +618,7 @@ public class GPStrackerHelper extends CordovaPlugin implements GoogleApiClient.C
                         // a dialog.
                         Log.i(TAG, "Location Services Resolution Required");
                         try {
+                            isLocationDialogShowing = true;
                             cordova.setActivityResultCallback (GPStrackerHelper.this);
                             status.startResolutionForResult(cordova.getActivity(),ACTIVITY_LOCATION_DIALOG);
                         } catch (IntentSender.SendIntentException e) {
