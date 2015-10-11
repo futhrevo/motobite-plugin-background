@@ -118,6 +118,7 @@ public class GeofenceTransitionsIntentService extends IntentService{
                 .setSound(soundUri)
                 .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Close ", pendingCloseIntent)
                 .setContentIntent(resultPendingIntent)
+//                .setGroup(Constants.GROUP_GEOFENCE_NOTIFICATIONS)
                 .build();
 
         // Issue the notification

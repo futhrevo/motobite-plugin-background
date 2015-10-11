@@ -31,6 +31,7 @@ import com.google.android.gms.common.api.GoogleApiClient;
 import com.google.android.gms.common.api.PendingResult;
 import com.google.android.gms.common.api.ResultCallback;
 import com.google.android.gms.common.api.Status;
+import com.google.android.gms.location.DetectedActivity;
 import com.google.android.gms.location.FusedLocationProviderApi;
 import com.google.android.gms.location.Geofence;
 import com.google.android.gms.location.GeofencingEvent;
@@ -97,6 +98,7 @@ public class GPStrackerHelper extends CordovaPlugin implements GoogleApiClient.C
      */
     private PendingIntent mGeofencePendingIntent;
     private BroadcastReceiver geofencingReceiver;
+    private BroadcastReceiver activityReceiver;
 
     /** Messenger for communicating with service. */
     Messenger mService = null;
@@ -131,7 +133,19 @@ public class GPStrackerHelper extends CordovaPlugin implements GoogleApiClient.C
                 }
             }
         };
+        activityReceiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                if(intent.getAction().equals(Constants.BROADCAST_ACTION)){
+                    Log.i(TAG,"Broadcast received");
+                    ArrayList<DetectedActivity> updatedActivities =
+                            intent.getParcelableArrayListExtra(Constants.ACTIVITY_EXTRA);
+                    DetectedActivity mostProbable = intent.getParcelableExtra(Constants.ACTIVITY_PROBABLE);
+                }
+            }
+        };
         cordova.getActivity().registerReceiver(geofencingReceiver, new IntentFilter(Constants.BROADCAST_GEOFENCE_RESULT));
+        cordova.getActivity().registerReceiver(activityReceiver, new IntentFilter(Constants.BROADCAST_ACTION));
     }
 
 
@@ -691,12 +705,11 @@ public class GPStrackerHelper extends CordovaPlugin implements GoogleApiClient.C
     // MARK: Location Listener callbacks implementation
     @Override
     public void onLocationChanged(Location location) {
-        if (mLocation == null || location.getAccuracy() < mLocation.getAccuracy()){
+        if (mLocation == null || location.getAccuracy() <= mLocation.getAccuracy()){
             mLocation = location;
-            if (mLocation.getAccuracy() <= MIN_ACCURACY){
-                removeLocationUpdates();
-                sendLastLocation();
-            }
+            removeLocationUpdates();
+            sendLastLocation();
+
         }
     }
     private void requestLocationUpdates(){

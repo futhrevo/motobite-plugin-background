@@ -83,20 +83,20 @@ public final class Constants {
     /**
      * The desired interval for location updates. Inexact. Updates may be more or less frequent.
      */
-    public static final long UPDATE_INTERVAL_IN_MILLISECONDS = 10000; // For Ex: 5000 for 5 seconds
+    public static final long UPDATE_INTERVAL_IN_MILLISECONDS = 5000; // For Ex: 5000 for 5 seconds
     /**
      * The fastest rate for active location updates. Exact. Updates will never be more frequent
      * than this value.
      */
-    public static final long FASTEST_UPDATE_INTERVAL_IN_MILLISECONDS =
-            UPDATE_INTERVAL_IN_MILLISECONDS / 2; // 16ms = 60fps
+    public static final long FASTEST_UPDATE_INTERVAL_IN_MILLISECONDS = 500;
+
     /**
      * The desired time between activity detections. Larger values result in fewer activity
      * detections while improving battery life. A value of 0 results in activity detections at the
      * fastest possible rate. Getting frequent updates negatively impact battery life and a real
      * app may prefer to request less frequent updates.
      */
-    public static final long DETECTION_INTERVAL_IN_MILLISECONDS = 20000;
+    public static final long DETECTION_INTERVAL_IN_MILLISECONDS = 10000;
     // to group notifications based on type to prevent stacking
     public static final  String GROUP_GEOFENCE_NOTIFICATIONS = "group_geofence_notifications";
     /**
