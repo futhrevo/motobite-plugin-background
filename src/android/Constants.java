@@ -6,6 +6,7 @@ import android.location.Location;
 
 import com.google.android.gms.location.DetectedActivity;
 import com.google.android.gms.location.GeofenceStatusCodes;
+import com.google.android.gms.location.LocationRequest;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -35,12 +36,14 @@ public final class Constants {
     public static final String ACTION_START = "start";
     public static final String ACTION_STOP = "stop";
     public static final String ACTION_CONFIGURE = "configure";
+    public static final String ACTION_SETCONFIG = "setConfig";
     public static final String ACTION_ECHO  = "echo";
     public static final String ACTION_GETLOCATION = "getLocation";
     public static final String ACTION_ADDGEOFENCE = "addGeofence";
     public static final String ACTION_REMOVEGEOFENCE  = "removeGeofence";
     public static final String ACTION_REMOVEALLGEOFENCES = "removeallGeofences";
     public static final String ACTION_NOTIFYABOUT = "notifyAbout";
+    public static final String ACTION_SYNCLOCATION = "syncLoc";
 
     public static final int MSG_ACTION_START = 1;
     public static final int MSG_ACTION_STOP = 2;
@@ -51,12 +54,18 @@ public final class Constants {
     public static final int MSG_ACTION_REMOVEGEOFENCE  = 7;
     public static final int MSG_ACTION_REMOVEALLGEOFENCES = 8;
     public static final int MSG_ACTION_NOTIFYABOUT = 9;
-
     public static final int MSG_POST_LOCATION = 110;
 
     public static final int SAFEHOUSE = 1;
     public static final int PICKUP = 2;
     public static final int POI = 3;
+
+    public static final int LOCATIONREQ_FIRSTSYNC = 1;
+    public static final int LOCATIONREQ_ONESHOT = 2;
+    public static final int LOCATIONREQ_SYNC = 3;
+    public static final int LOCATIONREQ_HIGH = 4;
+    public static final int LOCATIONREQ_LOW = 5;
+
 
     public static final String CLOSE_ACTION = "close";
 
@@ -128,8 +137,7 @@ public final class Constants {
     /**
      * Returns the error string for a geofencing error code.
      */
-    public static String getGeofenceErrorString(Context context, int errorCode) {
-        Resources mResources = context.getResources();
+    public static String getGeofenceErrorString(int errorCode) {
         switch (errorCode) {
             case GeofenceStatusCodes.GEOFENCE_NOT_AVAILABLE:
                 return "Geofence service is not available now";
@@ -154,6 +162,8 @@ public final class Constants {
         if(ACTION_REMOVEGEOFENCE.equalsIgnoreCase(action)) result = true;
         if(ACTION_REMOVEALLGEOFENCES.equalsIgnoreCase(action)) result = true;
         if(ACTION_NOTIFYABOUT.equalsIgnoreCase(action)) result = true;
+        if(ACTION_SYNCLOCATION.equalsIgnoreCase(action)) result = true;
+        if(ACTION_SETCONFIG.equalsIgnoreCase(action)) result = true;
 
 
         return result;
@@ -176,6 +186,45 @@ public final class Constants {
         }
 
         return o;
+    }
+    public static LocationRequest getLocationRequest(int requestType){
+        LocationRequest mLocationRequest = LocationRequest.create();
+        switch (requestType){
+            case LOCATIONREQ_FIRSTSYNC:
+                mLocationRequest.setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY)
+                        .setNumUpdates(100)
+                        .setInterval(500)
+                        .setFastestInterval(100)
+                        .setExpirationDuration(40000);
+                break;
+            case LOCATIONREQ_ONESHOT:
+                mLocationRequest.setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY)
+                        .setNumUpdates(1)
+                        .setExpirationDuration(1000);
+                break;
+            case LOCATIONREQ_SYNC:
+                mLocationRequest.setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY)
+                        .setInterval(1000)
+                        .setFastestInterval(100)
+                        .setExpirationDuration(120000);
+                break;
+            /**
+             These settings are the same as the settings for the map. They will in fact give you updates
+             at the maximal rates currently possible.
+             */
+            case LOCATIONREQ_HIGH:
+                mLocationRequest.setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY)
+                        .setInterval(UPDATE_INTERVAL_IN_MILLISECONDS)
+                        .setFastestInterval(FASTEST_UPDATE_INTERVAL_IN_MILLISECONDS);
+                break;
+            case LOCATIONREQ_LOW:
+                mLocationRequest.setPriority(LocationRequest.PRIORITY_BALANCED_POWER_ACCURACY)
+                        .setInterval(UPDATE_INTERVAL_IN_MILLISECONDS)
+                        .setFastestInterval(FASTEST_UPDATE_INTERVAL_IN_MILLISECONDS);
+                break;
+
+        }
+        return mLocationRequest;
     }
 }
 

@@ -1,7 +1,6 @@
 package com.reku.motobite.cordova;
 
 
-import android.annotation.TargetApi;
 import android.app.Activity;
 import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
@@ -11,16 +10,15 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.IntentSender;
 import android.content.ServiceConnection;
-import android.content.SharedPreferences;
 import android.location.Location;
 import android.location.LocationManager;
-import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Message;
 import android.os.Messenger;
 import android.os.RemoteException;
+import android.support.v4.app.NotificationManagerCompat;
 import android.util.Log;
 import android.widget.Toast;
 
@@ -32,9 +30,8 @@ import com.google.android.gms.common.api.PendingResult;
 import com.google.android.gms.common.api.ResultCallback;
 import com.google.android.gms.common.api.Status;
 import com.google.android.gms.location.DetectedActivity;
-import com.google.android.gms.location.FusedLocationProviderApi;
 import com.google.android.gms.location.Geofence;
-import com.google.android.gms.location.GeofencingEvent;
+import com.google.android.gms.location.GeofenceStatusCodes;
 import com.google.android.gms.location.GeofencingRequest;
 import com.google.android.gms.location.LocationListener;
 import com.google.android.gms.location.LocationRequest;
@@ -54,7 +51,6 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -66,14 +62,14 @@ public class GPStrackerHelper extends CordovaPlugin implements GoogleApiClient.C
     private GoogleApiClient mGApiClient;
     private Location mLocation = null;
     private final int ACTIVITY_LOCATION_DIALOG = 100;
-    private final LocationRequest mLocationRequestHighAccuracy = LocationRequest.create().setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY);
-    private static final float MIN_ACCURACY = 25.0f;
+    private static final float MIN_ACCURACY = 100.0f;
     private static final float MIN_LAST_READ_ACCURACY = 500.0f;
 
     private String getLocationCallbackId;
     private static String updateLocationCallbackId;
+    private static String onlyCallbackId;
 
-    private Intent updateServiceIntent;
+
     public static boolean isEnabled = false;
     public static boolean isInsideSafeHouse = false;
     public static boolean isInsidePickup = false;
@@ -98,20 +94,19 @@ public class GPStrackerHelper extends CordovaPlugin implements GoogleApiClient.C
      * Used when requesting to add or remove geofences
      */
     private PendingIntent mGeofencePendingIntent;
-    private BroadcastReceiver geofencingReceiver;
-    private BroadcastReceiver activityReceiver;
+    private NotificationManagerCompat notifyManager;
 
     /** Messenger for communicating with service. */
     Messenger mService = null;
     /** Flag indicating whether we have called bind on the service. */
     boolean mIsBound;
 
-    @Override
     public void initialize(CordovaInterface cordova, CordovaWebView webView) {
         super.initialize(cordova, webView);
         Log.i(TAG, "Plugin Init");
-        this.webView = webView;
+        GPStrackerHelper.webView = webView;
         doBindService();
+        servicesAvailable();
         mGApiClient = new GoogleApiClient.Builder(cordova.getActivity())
                 .addApi(LocationServices.API)
                 .addConnectionCallbacks(this)
@@ -125,28 +120,13 @@ public class GPStrackerHelper extends CordovaPlugin implements GoogleApiClient.C
         mGeofencePendingIntent = null;
         // Get the value of mGeofencesAdded
         //mGeofencesAdded = getSharedPreferencesInstance().getBoolean(Constants.GEOFENCES_ADDED_KEY,false);
-        geofencingReceiver = new BroadcastReceiver() {
-            @Override
-            public void onReceive(Context context, Intent intent) {
-                if(intent.getAction().equals(Constants.BROADCAST_GEOFENCE_RESULT)){
-                    Log.i(TAG, "Received broadcast " + intent.getAction());
-                    onTransitionReceived(intent.getBundleExtra("geoBundle"));
-                }
-            }
-        };
-        activityReceiver = new BroadcastReceiver() {
-            @Override
-            public void onReceive(Context context, Intent intent) {
-                if(intent.getAction().equals(Constants.BROADCAST_ACTION)){
-                    Log.i(TAG,"Broadcast received");
-                    ArrayList<DetectedActivity> updatedActivities =
-                            intent.getParcelableArrayListExtra(Constants.ACTIVITY_EXTRA);
-                    DetectedActivity mostProbable = intent.getParcelableExtra(Constants.ACTIVITY_PROBABLE);
-                }
-            }
-        };
-        cordova.getActivity().registerReceiver(geofencingReceiver, new IntentFilter(Constants.BROADCAST_GEOFENCE_RESULT));
-        cordova.getActivity().registerReceiver(activityReceiver, new IntentFilter(Constants.BROADCAST_ACTION));
+        cordova.getActivity().registerReceiver(mGeofencingReceiver, new IntentFilter(Constants.BROADCAST_GEOFENCE_RESULT));
+        cordova.getActivity().registerReceiver(mActivityReceiver, new IntentFilter(Constants.BROADCAST_ACTION));
+        cordova.getActivity().registerReceiver(mBatteryStatusReceiver, new IntentFilter(Intent.ACTION_BATTERY_LOW));
+        cordova.getActivity().registerReceiver(mBatteryStatusReceiver, new IntentFilter(Intent.ACTION_BATTERY_OKAY));
+        if (notifyManager == null){
+            notifyManager = NotificationManagerCompat.from(cordova.getActivity());
+        }
     }
 
 
@@ -154,7 +134,7 @@ public class GPStrackerHelper extends CordovaPlugin implements GoogleApiClient.C
     public void onPause(boolean multitasking) {
         super.onPause(multitasking);
         Log.i(TAG, "TODO: handle onPause Called, handle the functions");
-        if (isBackgroundUpdatesRequired && isEnabled){
+        if (!isBackgroundUpdatesRequired && isEnabled){
             Message request = Message.obtain();
             request.what = Constants.MSG_ACTION_STOP;
             request.replyTo = mMessenger;
@@ -174,7 +154,7 @@ public class GPStrackerHelper extends CordovaPlugin implements GoogleApiClient.C
                 mGApiClient.connect();
             }
         }
-        if (isBackgroundUpdatesRequired && isEnabled){
+        if (!isBackgroundUpdatesRequired && isEnabled){
             Message request = Message.obtain();
             request.what = Constants.MSG_ACTION_START;
             request.replyTo = mMessenger;
@@ -203,7 +183,6 @@ public class GPStrackerHelper extends CordovaPlugin implements GoogleApiClient.C
                         // All required changes were successfully made
                         Log.i(TAG, "user accepted to allow location");
                         requestLocationUpdates();
-                        sendLastLocation();
                         break;
                     case Activity.RESULT_CANCELED:
                         // The user was asked to change settings, but chose not to
@@ -231,9 +210,14 @@ public class GPStrackerHelper extends CordovaPlugin implements GoogleApiClient.C
             this.constants = new Constants();
         }
         try{
-            if(mIsBound && constants.isActionValid(action)) {
+            if(mIsBound && Constants.isActionValid(action)) {
                         if (Constants.ACTION_CONFIGURE.equalsIgnoreCase(action)) {
-
+                            //store the callbackId and reuse it for any error messages or else
+                            onlyCallbackId = callbackContext.getCallbackId();
+                            sendCordovaMessage(true,"Success");
+//                            PluginResult configurePluginResult = new PluginResult(PluginResult.Status.OK,"configured");
+//                            configurePluginResult.setKeepCallback(true);
+//                            webView.sendPluginResult(configurePluginResult,onlyCallbackId);
                             Log.i(TAG, "Configure called");
 
                         } else if (Constants.ACTION_ECHO.equalsIgnoreCase(action)) {
@@ -350,7 +334,26 @@ public class GPStrackerHelper extends CordovaPlugin implements GoogleApiClient.C
                                     }
                                 }
                             });
-                        } else {
+                        } else if(Constants.ACTION_SYNCLOCATION.equalsIgnoreCase(action)){
+                            Log.i(TAG, "Location sync started, stopping at accuracy less than 10m or in 2min");
+                            LocationServices.FusedLocationApi.requestLocationUpdates(mGApiClient, Constants.getLocationRequest(Constants.LOCATIONREQ_SYNC), new LocationListener() {
+                                @Override
+                                public void onLocationChanged(Location location) {
+                                    if (location.getAccuracy() <= 10){
+                                        mLocation = location;
+                                        PluginResult getLocationresult = new PluginResult(PluginResult.Status.OK,
+                                                Constants.returnLocationJSON(location));
+                                        getLocationresult.setKeepCallback(false);
+                                        Log.i(TAG, "sending synced location");
+                                        callbackContext.sendPluginResult(getLocationresult);
+                                        LocationServices.FusedLocationApi.removeLocationUpdates(mGApiClient,this);
+                                    }
+                                }
+                            });
+
+                        } else if(Constants.ACTION_SETCONFIG.equalsIgnoreCase(action)){
+                            Log.i(TAG,"user wants to set/change a config");
+                        }else {
                             Log.d(TAG, "Execution should not come here, check");
                         }
 
@@ -375,9 +378,10 @@ public class GPStrackerHelper extends CordovaPlugin implements GoogleApiClient.C
         doUnbindService();
         // TODO: find out if it is really required to do this
         removeAllFences(null);
-        cordova.getActivity().unregisterReceiver(geofencingReceiver);
-        cordova.getActivity().unregisterReceiver(activityReceiver);
-        executeStop();
+        cordova.getActivity().unregisterReceiver(mGeofencingReceiver);
+        cordova.getActivity().unregisterReceiver(mActivityReceiver);
+        cordova.getActivity().unregisterReceiver(mBatteryStatusReceiver);
+        //executeStop();
         super.onDestroy();
 
     }
@@ -386,6 +390,7 @@ public class GPStrackerHelper extends CordovaPlugin implements GoogleApiClient.C
         Log.d(TAG, "Google Play services init");
         final Activity activity = this.cordova.getActivity();
        // updateServiceIntent.putExtra("userId",this.userId);
+        final Intent updateServiceIntent = new Intent(this.cordova.getActivity(),GPStracker.class);
         cordova.getActivity().runOnUiThread(new Runnable() {
             @Override
             public void run() {
@@ -406,9 +411,18 @@ public class GPStrackerHelper extends CordovaPlugin implements GoogleApiClient.C
     private void sendLastLocation(){
         Log.i(TAG,"send last location to user");
         if (getLocationCallbackId != null) {
-            cordova.getThreadPool().execute(new Runnable() {
+            cordova.getActivity().runOnUiThread(new Runnable() {
                 @Override
                 public void run() {
+                    LocationServices.FusedLocationApi.requestLocationUpdates(mGApiClient,
+                            Constants.getLocationRequest(Constants.LOCATIONREQ_ONESHOT),
+                            new LocationListener() {
+                        @Override
+                        public void onLocationChanged(Location location) {
+                            Log.i(TAG,"one shot location "+ location);
+                            mLocation = location;
+                        }
+                    });
                     mLocation = LocationServices.FusedLocationApi.getLastLocation(mGApiClient);
                     Log.i(TAG, "Trying to send location to callbackId " + getLocationCallbackId + " with location at " + mLocation);
                     if (mLocation != null) {
@@ -416,25 +430,23 @@ public class GPStrackerHelper extends CordovaPlugin implements GoogleApiClient.C
                                 Constants.returnLocationJSON(mLocation));
                         getLocationresult.setKeepCallback(false);
                         Log.i(TAG, "sending get location");
-                        CallbackContext callbackContext = new CallbackContext(getLocationCallbackId, webView);
-                        callbackContext.sendPluginResult(getLocationresult);
+                        webView.sendPluginResult(getLocationresult,getLocationCallbackId);
                         getLocationCallbackId = null;
                     }
                     Log.i(TAG, "location not accepted");
-
                 }
             });
+
         }
 
     }
     /**
      * Handler of incoming messages from service.
      */
-    private static Handler IncomingHandler = new Handler() {
+    private Handler IncomingHandler = new Handler() {
         @Override
         public void handleMessage(Message msg) {
             Boolean keep;
-            CallbackContext callbackContext;
             switch (msg.what) {
                 case Constants.MSG_ACTION_ECHO:
                     String str = msg.getData().getString("message");
@@ -442,9 +454,8 @@ public class GPStrackerHelper extends CordovaPlugin implements GoogleApiClient.C
                     PluginResult echoResult = new PluginResult(PluginResult.Status.OK,str);
                     keep = false;
                     String callbackId = getCallback(msg.what,keep);
-                    callbackContext = new CallbackContext(callbackId, webView);
                     echoResult.setKeepCallback(keep);
-                    callbackContext.sendPluginResult(echoResult);
+                    webView.sendPluginResult(echoResult,callbackId);
                     break;
                 case Constants.MSG_POST_LOCATION:
                     try {
@@ -452,9 +463,8 @@ public class GPStrackerHelper extends CordovaPlugin implements GoogleApiClient.C
                         JSONObject loc = new JSONObject(locString);
                         PluginResult postLocationResult = new PluginResult(PluginResult.Status.OK,loc);
                         keep = true;
-                        callbackContext = new CallbackContext(updateLocationCallbackId, webView);
                         postLocationResult.setKeepCallback(keep);
-                        callbackContext.sendPluginResult(postLocationResult);
+                        webView.sendPluginResult(postLocationResult,updateLocationCallbackId);
                     } catch (JSONException e) {
                         e.printStackTrace();
                     }
@@ -518,8 +528,8 @@ public class GPStrackerHelper extends CordovaPlugin implements GoogleApiClient.C
         // Establish a connection with the service.  We use an explicit
         // class name because there is no reason to be able to let other
         // applications replace our component.
-        Log.i(TAG, "bind Service "+intent.toString());
-        context.startService(intent);
+        Log.i(TAG, "bind Service " + intent.toString());
+        //context.startService(intent);
         context.bindService(intent, mConnection, Context.BIND_AUTO_CREATE);
         mIsBound = true;
     }
@@ -591,12 +601,16 @@ public class GPStrackerHelper extends CordovaPlugin implements GoogleApiClient.C
         }
     }
     public void _checkLocationSettings() {
-        //LocationRequest mLocationRequestBalancedPowerAccuracy = LocationRequest.create().setPriority(LocationRequest.PRIORITY_BALANCED_POWER_ACCURACY);
+
         if (isLocationDialogShowing){
             return;
         }
-        LocationSettingsRequest.Builder builder = new LocationSettingsRequest.Builder().addLocationRequest(mLocationRequestHighAccuracy);
-        builder.setAlwaysShow(true);
+        final LocationRequest mLocationRequestHighAccuracy = LocationRequest.create().setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY);
+        final LocationRequest mLocationBackground = LocationRequest.create().setPriority(LocationRequest.PRIORITY_BALANCED_POWER_ACCURACY);
+        LocationSettingsRequest.Builder builder = new LocationSettingsRequest.Builder()
+                .addLocationRequest(mLocationRequestHighAccuracy)
+                .addLocationRequest(mLocationBackground)
+                .setAlwaysShow(true);
 
         PendingResult<LocationSettingsResult> result =
                 LocationServices.SettingsApi.checkLocationSettings(mGApiClient, builder.build());
@@ -612,6 +626,7 @@ public class GPStrackerHelper extends CordovaPlugin implements GoogleApiClient.C
                         // All location settings are satisfied. The client can initialize location
                         // requests here.
                         Log.i(TAG, "Location Services Enabled");
+//                        requestLocationUpdates();
                         break;
                     case LocationSettingsStatusCodes.RESOLUTION_REQUIRED:
                         // Location settings are not satisfied. But could be fixed by showing the user
@@ -627,6 +642,7 @@ public class GPStrackerHelper extends CordovaPlugin implements GoogleApiClient.C
                         break;
                     case LocationSettingsStatusCodes.SETTINGS_CHANGE_UNAVAILABLE:
                         Log.i(TAG,"Location settings are not satisfied. However, we have no way to fix the settings so we won't show the dialog.");
+                        sendCordovaMessage(false,"Location settings are not satisfied. However, we have no way to fix the settings so we won't show the dialog");
                         break;
                 }
             }
@@ -662,7 +678,6 @@ public class GPStrackerHelper extends CordovaPlugin implements GoogleApiClient.C
 
     public static List<String> asList(final JSONArray ja) {
         final int len = ja.length();
-        Log.i(TAG, "length of list ja is " + len);
         final ArrayList<String> result = new ArrayList<String>(len);
         for (int i = 0; i < len; i++) {
             final String obj = ja.optString(i);
@@ -670,7 +685,6 @@ public class GPStrackerHelper extends CordovaPlugin implements GoogleApiClient.C
                 result.add(obj);
             }
         }
-        Log.i(TAG,"length of list ja is "+ result.size());
         return result;
     }
 
@@ -706,17 +720,24 @@ public class GPStrackerHelper extends CordovaPlugin implements GoogleApiClient.C
     // MARK: Location Listener callbacks implementation
     @Override
     public void onLocationChanged(Location location) {
-        if (mLocation == null || location.getAccuracy() <= mLocation.getAccuracy()){
+        Log.i(TAG,"got new location provided by "+ location.getProvider() + location);
+        if (mLocation == null){
             mLocation = location;
+        }
+        if (location.getAccuracy() <= MIN_ACCURACY){
             removeLocationUpdates();
             sendLastLocation();
-
         }
     }
     private void requestLocationUpdates(){
-        LocationServices.FusedLocationApi.requestLocationUpdates(mGApiClient, mLocationRequestHighAccuracy, GPStrackerHelper.this);
+        Log.i(TAG, "starting location updates");
+        LocationServices.FusedLocationApi.requestLocationUpdates(mGApiClient,
+                Constants.getLocationRequest(Constants.LOCATIONREQ_FIRSTSYNC),
+                GPStrackerHelper.this);
+
     }
     private void removeLocationUpdates(){
+        Log.i(TAG,"Stopping location updates");
         LocationServices.FusedLocationApi.removeLocationUpdates(mGApiClient, this);
     }
     public  void onTransitionReceived(Bundle fenceBundle) {
@@ -740,6 +761,10 @@ public class GPStrackerHelper extends CordovaPlugin implements GoogleApiClient.C
             switch (type){
                 case Constants.SAFEHOUSE:
                     isInsideSafeHouse = true;
+                    Toast.makeText(cordova.getActivity(),
+                            "Geofences Added",
+                            Toast.LENGTH_SHORT
+                    ).show();
                     break;
                 case Constants.PICKUP:
                     isInsidePickup = true;
@@ -759,25 +784,28 @@ public class GPStrackerHelper extends CordovaPlugin implements GoogleApiClient.C
                 PluginResult addGeofenceResult = new PluginResult(PluginResult.Status.OK, o);
                 addGeofenceResult.setKeepCallback(true);
                 Log.i(TAG, "sending enter geofence");
-                CallbackContext callbackContext = new CallbackContext(callbackId, webView);
-                callbackContext.sendPluginResult(addGeofenceResult);
+                webView.sendPluginResult(addGeofenceResult,callbackId);
             } catch (JSONException e) {
                 e.printStackTrace();
             }
         }
+        String inside = "Entered ";
         if (isInsideSafeHouse){
+            inside += "SafeHouse ";
             Log.i(TAG,"Inside a safehouse");
             if (isEnabled && isBackgroundUpdatesRequired){
 
             }
         }
         if(isInsidePickup){
+            inside += "Pickup point";
             Log.i(TAG,"Inside a pickup location");
         }
         if(isInsidePoi){
+            inside += "POI";
             Log.i(TAG,"Inside a POI");
         }
-
+        Toast.makeText(cordova.getActivity(), inside, Toast.LENGTH_SHORT).show();
     }
     private  void didExitGeofence(ArrayList<String> triggeringGeofences){
         for (String geofenceId : triggeringGeofences) {
@@ -805,8 +833,7 @@ public class GPStrackerHelper extends CordovaPlugin implements GoogleApiClient.C
                 PluginResult addGeofenceResult = new PluginResult(PluginResult.Status.OK, o);
                 addGeofenceResult.setKeepCallback(true);
                 Log.i(TAG, "sending enter geofence");
-                CallbackContext callbackContext = new CallbackContext(callbackId, webView);
-                callbackContext.sendPluginResult(addGeofenceResult);
+                webView.sendPluginResult(addGeofenceResult,callbackId);
             } catch (JSONException e) {
                 e.printStackTrace();
             }
@@ -865,12 +892,19 @@ public class GPStrackerHelper extends CordovaPlugin implements GoogleApiClient.C
             PluginResult addGeofenceResult = new PluginResult(PluginResult.Status.OK, o);
             addGeofenceResult.setKeepCallback(false);
             Log.i(TAG, "sending enter geofence with status removed");
-            CallbackContext callbackContext = new CallbackContext(res, webView);
-            callbackContext.sendPluginResult(addGeofenceResult);
+            webView.sendPluginResult(addGeofenceResult,res);
         } catch (JSONException e) {
             e.printStackTrace();
         }
         removeGeofence(id);
+        int index = 0;
+        for (Geofence geofence:mGeofenceList){
+            if(geofence.getRequestId().equals(id)){
+                mGeofenceList.remove(index);
+                break;
+            }
+            index++;
+        }
         return true;
     }
     /**
@@ -927,23 +961,50 @@ public class GPStrackerHelper extends CordovaPlugin implements GoogleApiClient.C
     }
     public boolean addGeofence(JSONObject cfg, CallbackContext callbackContext){
         try{
-            String type = cfg.getString("type");
+            final String type = cfg.getString("type");
             Double lat = cfg.getDouble("lat");
             Double lng = cfg.getDouble("lng");
             Float radius = (float) cfg.getDouble("radius");
-            String callbackId = callbackContext.getCallbackId();
-            String id = cfg.getString("id");
+            final String callbackId = callbackContext.getCallbackId();
+            final String id = cfg.getString("id");
             Log.i(TAG, "Add circle with id: " + id + "and lat: " + lat + ", " + lng + " and with radius: " + radius);
+            addCallback(callbackId, Constants.MSG_ACTION_ADDGEOFENCE);
+            Geofence geofence = buildGeofenceObject(id, lat, lng,radius);
+            mGeofenceList.add(geofence);
             LocationServices.GeofencingApi.addGeofences(mGApiClient,
-                    getGeofencingRequest(buildGeofenceObject(id, lat, lng,radius)),
-                    getGeofencePendingIntent()).setResultCallback(new fenceResults());
-            if (type.equalsIgnoreCase("safeHouse")){
-                safeHouses.put(id,callbackId);
-            } else if (type.equalsIgnoreCase("pickup")){
-                pickup.put(id,callbackId);
-            } else{
-                poi.put(id,callbackId);
-            }
+                    getGeofencingRequest(geofence),
+                    getGeofencePendingIntent()).setResultCallback(new ResultCallback<Status>() {
+                @Override
+                public void onResult(Status status) {
+                    JSONObject o = new JSONObject();
+                    if (status.isSuccess()) {
+                        Log.i(TAG, "Geofence status "+ status.getStatus());
+                        if (status.isSuccess()) {
+                            try {
+                                o.put("transition","added");
+                                o.put("Id",id);
+                                PluginResult addGeofenceStatus = new PluginResult(PluginResult.Status.OK, o);
+                                addGeofenceStatus.setKeepCallback(true);
+                                webView.sendPluginResult(addGeofenceStatus,callbackId);
+                                if (type.equalsIgnoreCase("safeHouse")){
+                                    safeHouses.put(id,callbackId);
+                                } else if (type.equalsIgnoreCase("pickup")){
+                                    pickup.put(id,callbackId);
+                                } else{
+                                    poi.put(id,callbackId);
+                                }
+                            } catch (JSONException e) {
+                                e.printStackTrace();
+                            }
+                        }
+                    }else{
+                        // Get the status code for the error and log it using a user-friendly message.
+                        String errorMessage = Constants.getGeofenceErrorString(status.getStatusCode());
+                        Log.e(TAG, errorMessage);
+                        webView.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, errorMessage),callbackId);
+                    }
+                }
+            });
             return true;
         }catch (SecurityException securityException){
             // Catch exception generated if the app does not use ACCESS_FINE_LOCATION permission.
@@ -977,11 +1038,11 @@ public class GPStrackerHelper extends CordovaPlugin implements GoogleApiClient.C
                         PluginResult removeAllGeofenceResult = new PluginResult(PluginResult.Status.OK);
                         removeAllGeofenceResult.setKeepCallback(false);
                         Log.i(TAG, "sending enter geofence with status removed");
-                        CallbackContext callbackContext = new CallbackContext(callbackId, webView);
-                        callbackContext.sendPluginResult(removeAllGeofenceResult);
+                        webView.sendPluginResult(removeAllGeofenceResult,callbackId);
                     }
                 }
             });
+            mGeofenceList.clear();
             return true;
         }catch (SecurityException securityException){
             Log.e(TAG,"got security Exception in removeAllGeofences - ACCESS_FINE_LOCATION permission");
@@ -990,26 +1051,65 @@ public class GPStrackerHelper extends CordovaPlugin implements GoogleApiClient.C
     }
 
 
-
-    private class fenceResults implements ResultCallback<Status> {
-        private final String TAG = fenceResults.class.getSimpleName();
+    private final BroadcastReceiver mBatteryStatusReceiver = new BroadcastReceiver(){
         @Override
-        public void onResult(Status status) {
-            Log.i(TAG, "Geofence status "+ status.getStatus());
-            if (status.isSuccess()) {
-                Toast.makeText(
-                        cordova.getActivity(),
-                        "Geofences Added",
-                        Toast.LENGTH_SHORT
-                ).show();
-            }else{
-                // Get the status code for the error and log it using a user-friendly message.
-                String errorMessage = Constants.getGeofenceErrorString(cordova.getActivity(),
-                        status.getStatusCode());
-                Log.e(TAG, errorMessage);
+        public void onReceive(Context context, Intent intent) {
+            if(intent.getAction().equals(Intent.ACTION_BATTERY_LOW)){
+                Log.i(TAG,"Battery Level Low");
+            }else if (intent.getAction().equals(Intent.ACTION_BATTERY_OKAY)){
+                Log.i(TAG,"Battery Level Okay");
+            } else if(intent.getAction().equals(Intent.ACTION_SCREEN_ON)){
+                Log.i(TAG,"Screen is On");
+            }else if(intent.getAction().equals(Intent.ACTION_SCREEN_OFF)){
+                Log.i(TAG,"Screen is off");
             }
-
-
         }
+    };
+    private final BroadcastReceiver mActivityReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if(intent.getAction().equals(Constants.BROADCAST_ACTION)){
+                Log.i(TAG,"Broadcast received");
+                ArrayList<DetectedActivity> updatedActivities =
+                        intent.getParcelableArrayListExtra(Constants.ACTIVITY_EXTRA);
+                DetectedActivity mostProbable = intent.getParcelableExtra(Constants.ACTIVITY_PROBABLE);
+            }
+        }
+    };
+    private final BroadcastReceiver mGeofencingReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if(intent.getAction().equals(Constants.BROADCAST_GEOFENCE_RESULT)){
+                Log.i(TAG, "Received broadcast " + intent.getAction());
+                int geoError = intent.getIntExtra("GeofenceError", 0);
+                if(geoError == 0){
+                    onTransitionReceived(intent.getBundleExtra("geoBundle"));
+                }else{
+                    switch (geoError){
+                        case GeofenceStatusCodes.GEOFENCE_NOT_AVAILABLE:
+                            Log.i(TAG,"Location services disabled, add all geofences when location is again enabled");
+                            sendCordovaMessage(false,"Location services disabled, add all geofences when location is again enabled");
+                            break;
+                    }
+                }
+
+            }
+        }
+    };
+    private void sendCordovaMessage(boolean type, String msg)  {
+        Log.i(TAG,"static message sending called");
+        Log.i(TAG,onlyCallbackId);
+        if(onlyCallbackId == null){
+            return;
+        }
+        PluginResult msgPluginResult;
+        if(type){
+            msgPluginResult = new PluginResult(PluginResult.Status.OK,msg);
+        }else{
+            msgPluginResult = new PluginResult(PluginResult.Status.ERROR,msg);
+        }
+    Log.i(TAG,"sending message to cordova");
+        msgPluginResult.setKeepCallback(true);
+        webView.sendPluginResult(msgPluginResult,onlyCallbackId);
     }
 }

@@ -52,12 +52,12 @@ public class DetectedActivitiesIntentService extends IntentService{
 
             // Log each activity.
             Log.i(TAG, "activities detected");
-            for (DetectedActivity da : detectedActivities) {
-                Log.i(TAG, Constants.getActivityString(
-                                getApplicationContext(),
-                                da.getType()) + " " + da.getConfidence() + "%"
-                );
-            }
+//            for (DetectedActivity da : detectedActivities) {
+//                Log.i(TAG, Constants.getActivityString(
+//                                getApplicationContext(),
+//                                da.getType()) + " " + da.getConfidence() + "%"
+//                );
+//            }
 
             // Broadcast the list of detected activities.
             localIntent.putExtra(Constants.ACTIVITY_EXTRA, detectedActivities);

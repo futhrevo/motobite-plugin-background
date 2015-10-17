@@ -1,7 +1,6 @@
 package com.reku.motobite.cordova;
 
 import android.annotation.SuppressLint;
-import android.app.Notification;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
@@ -17,11 +16,9 @@ import android.os.IBinder;
 import android.os.Message;
 import android.os.Messenger;
 import android.os.RemoteException;
-import android.provider.Settings;
 import android.support.v4.app.NotificationCompat;
 import android.support.v4.content.LocalBroadcastManager;
 import android.util.Log;
-import android.widget.Toast;
 
 import com.google.android.gms.common.ConnectionResult;
 import com.google.android.gms.common.api.GoogleApiClient;
@@ -33,7 +30,6 @@ import com.google.android.gms.common.api.Status;
 import com.google.android.gms.location.ActivityRecognition;
 import com.google.android.gms.location.DetectedActivity;
 import com.google.android.gms.location.LocationListener;
-import com.google.android.gms.location.LocationRequest;
 import com.google.android.gms.location.LocationServices;
 import com.google.android.gms.location.LocationSettingsRequest;
 import com.google.android.gms.location.LocationSettingsResult;
@@ -41,14 +37,9 @@ import com.google.android.gms.location.LocationSettingsStates;
 import com.google.android.gms.location.LocationSettingsStatusCodes;
 import com.futrevo.reku.motobite.MainActivity;
 
-import org.json.JSONArray;
-import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.List;
 
 /**
  * Created by rakeshkalyankar on 28/05/15.
@@ -59,7 +50,7 @@ public class GPStracker extends Service implements ConnectionCallbacks, OnConnec
     private static GoogleApiClient mGoogleApiClient;
     private NotificationManager notifyManager;
     private Location mCurrentLocation;
-    private String user = "tester1";
+    private boolean isHigh = false;
 
     /**
      * A receiver for DetectedActivity objects broadcast by the
@@ -71,20 +62,6 @@ public class GPStracker extends Service implements ConnectionCallbacks, OnConnec
      */
     private PendingIntent mActivityDetectionPendingIntent;
 
-
-    /**
-    These settings are the same as the settings for the map. They will in fact give you updates
-    at the maximal rates currently possible.
-    */
-    private static final LocationRequest REQUESTHIGH = LocationRequest.create()
-            .setInterval(Constants.UPDATE_INTERVAL_IN_MILLISECONDS)
-            .setFastestInterval(Constants.FASTEST_UPDATE_INTERVAL_IN_MILLISECONDS)
-            .setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY);
-
-    private static final LocationRequest REQUESTLOW = LocationRequest.create()
-            .setInterval(Constants.UPDATE_INTERVAL_IN_MILLISECONDS)
-            .setFastestInterval(Constants.FASTEST_UPDATE_INTERVAL_IN_MILLISECONDS)
-            .setPriority(LocationRequest.PRIORITY_BALANCED_POWER_ACCURACY);
     private LocationSettingsRequest.Builder builder;
 
     /**
@@ -101,6 +78,7 @@ public class GPStracker extends Service implements ConnectionCallbacks, OnConnec
 
         // Retrieve an instance of SharedPreferences object
         getSharedPreferencesInstance();
+        setUpdatesRequestedState(false);
         // Get an instance of the Notification Manager
         if(notifyManager == null){
             notifyManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
@@ -135,7 +113,7 @@ public class GPStracker extends Service implements ConnectionCallbacks, OnConnec
         /**
          * Notifying user to turn on location services, continue otherwise
          */
-        builder = new LocationSettingsRequest.Builder().addLocationRequest(REQUESTHIGH);
+        builder = new LocationSettingsRequest.Builder().addLocationRequest(Constants.getLocationRequest(Constants.LOCATIONREQ_HIGH));
         builder.setAlwaysShow(true);
         PendingResult<LocationSettingsResult> result =
                 LocationServices.SettingsApi.checkLocationSettings(mGoogleApiClient, builder.build());
@@ -162,8 +140,8 @@ public class GPStracker extends Service implements ConnectionCallbacks, OnConnec
             }
         });
 
-        //LocationServices.FusedLocationApi.requestLocationUpdates(mGoogleApiClient, REQUESTHIGH, this);  // LocationListener
-        //requestActivityUpdates();
+        LocalBroadcastManager.getInstance(this).registerReceiver(mBroadcastReceiver,
+                new IntentFilter(Constants.BROADCAST_ACTION));
     }
 
 
@@ -214,7 +192,7 @@ public class GPStracker extends Service implements ConnectionCallbacks, OnConnec
      * Show a notification while this service is running.
      */
     private void showNotification() {
-        // Set the Intent action to open Location Settings
+        // Set the Intent action to open MainActivity
         Intent appIntent =  new Intent(this, MainActivity.class);
         // Create a PendingIntent to start an Activity
         PendingIntent pendingIntent = PendingIntent.getActivity(getApplicationContext(), 0, appIntent, PendingIntent.FLAG_UPDATE_CURRENT);
@@ -224,9 +202,9 @@ public class GPStracker extends Service implements ConnectionCallbacks, OnConnec
 
         // Set the title, text, and icon
         builder.setContentTitle("MotoBite")
-                .setContentText("Click to turn on GPS, or swipe to ignore")
+                .setContentText("Running")
                 .setSmallIcon(android.R.drawable.ic_menu_mylocation)
-                .setAutoCancel(true)
+                .setAutoCancel(false)
                         // Get the Intent that starts the Location settings panel
                 .setContentIntent(pendingIntent)
                 .setOngoing(true);
@@ -299,7 +277,18 @@ public class GPStracker extends Service implements ConnectionCallbacks, OnConnec
         ActivityRecognition.ActivityRecognitionApi.removeActivityUpdates(
                 mGoogleApiClient,
                 getActivityDetectionPendingIntent()
-        ).setResultCallback(this);
+        ).setResultCallback(new ResultCallback<Status>() {
+            @Override
+            public void onResult(Status status) {
+                if (status.isSuccess()){
+                    setUpdatesRequestedState(false);
+                    Log.i(TAG, "Activity updates removed");
+                }else{
+                    String errorMessage = Constants.getGeofenceErrorString(status.getStatusCode());
+                    Log.e(TAG, errorMessage);
+                }
+            }
+        });
     }
 
     /**
@@ -317,24 +306,22 @@ public class GPStracker extends Service implements ConnectionCallbacks, OnConnec
     }
 
     /**
-     * Runs when the result of calling requestActivityUpdates() and removeActivityUpdates() becomes
-     * available. Either method can complete successfully or with an error.
+     * Runs when the result of calling requestActivityUpdates() becomes available
      *
      * @param status The Status returned through a PendingIntent when requestActivityUpdates()
      *               or removeActivityUpdates() are called.
      */
     @Override
     public void onResult(Status status) {
+        Log.i(TAG,status.toString());
         if (status.isSuccess()) {
-            // Toggle the status of activity updates requested, and save in shared preferences.
-            boolean requestingUpdates = !getUpdatesRequestedState();
-            setUpdatesRequestedState(requestingUpdates);
-            Log.i(TAG, requestingUpdates ? "Activity updates added" : "Activity updates removed");
+            // make state true and save in shared preferences.
+            setUpdatesRequestedState(true);
+            Log.i(TAG, "Activity updates added");
         }else{
             Log.e(TAG, "Error adding or removing activity detection: " + status.getStatusMessage());
             // Get the status code for the error and log it using a user-friendly message.
-            String errorMessage = Constants.getGeofenceErrorString(this,
-                    status.getStatusCode());
+            String errorMessage = Constants.getGeofenceErrorString(status.getStatusCode());
             Log.e(TAG, errorMessage);
         }
     }
@@ -397,15 +384,24 @@ public class GPStracker extends Service implements ConnectionCallbacks, OnConnec
     }
 
     private void updateLocationMode(DetectedActivity probable) {
-        Log.i(TAG, String.valueOf(probable));
         if(probable.getConfidence() > 60){
-            Log.i(TAG, "activity detected with more than 60% confidence ");
+            Log.i(TAG, "activity detected with more than 60% confidence");
             switch (probable.getType()){
                 case DetectedActivity.STILL:
-                    //LocationServices.FusedLocationApi.requestLocationUpdates(mGoogleApiClient, REQUESTLOW, this);  // LocationListener
+                    if(isHigh){
+                        LocationServices.FusedLocationApi.requestLocationUpdates(mGoogleApiClient,
+                                Constants.getLocationRequest(Constants.LOCATIONREQ_LOW), this);  // LocationListener
+                        isHigh = false;
+                        Log.i(TAG,"High mode disabled");
+                    }
                     break;
                 default:
-                    LocationServices.FusedLocationApi.requestLocationUpdates(mGoogleApiClient, REQUESTHIGH, this);  // LocationListener
+                    if(!isHigh){
+                        LocationServices.FusedLocationApi.requestLocationUpdates(mGoogleApiClient,
+                                Constants.getLocationRequest(Constants.LOCATIONREQ_HIGH), this);  // LocationListener
+                        isHigh = true;
+                        Log.i(TAG,"High mode enabled");
+                    }
                     break;
             }
         }
@@ -465,18 +461,25 @@ public class GPStracker extends Service implements ConnectionCallbacks, OnConnec
                     } catch (RemoteException e) {
                         e.printStackTrace();
                     }
-
                     break;
                 case Constants.MSG_POST_LOCATION:
 
                     break;
                 case Constants.MSG_ACTION_START:
-                    LocationServices.FusedLocationApi.requestLocationUpdates(mGoogleApiClient, REQUESTHIGH, GPStracker.this);  // LocationListener
+                    if(!isHigh) {
+                        showNotification();
+                        LocationServices.FusedLocationApi.requestLocationUpdates(mGoogleApiClient,
+                                Constants.getLocationRequest(Constants.LOCATIONREQ_HIGH), GPStracker.this);  // LocationListener
+                        isHigh = true;
+                    }
                     requestActivityUpdates();
                     break;
                 case Constants.MSG_ACTION_STOP:
+                    Log.i(TAG,"cordova wants to stop sending location");
+                    notifyManager.cancelAll();
                     stopLocationUpdates();
                     removeActivityUpdates();
+                    isHigh = false;
                     break;
                 case  Constants.MSG_REGISTER_CLIENT:
                     mClients.add(msg.replyTo);

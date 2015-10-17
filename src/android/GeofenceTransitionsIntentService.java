@@ -50,10 +50,14 @@ public class GeofenceTransitionsIntentService extends IntentService{
     @Override
     protected void onHandleIntent(Intent intent) {
         GeofencingEvent geofencingEvent = GeofencingEvent.fromIntent(intent);
+        Intent i = new Intent(Constants.BROADCAST_GEOFENCE_RESULT);
         Log.i(TAG,intent.toString());
         if(geofencingEvent.hasError()){
-            String errorMessage = Constants.getGeofenceErrorString(this, geofencingEvent.getErrorCode());
+            // if user turns off GPS when monitoring geofences all the geofences are removed, need to track this
+            String errorMessage = Constants.getGeofenceErrorString(geofencingEvent.getErrorCode());
             Log.e(TAG, errorMessage);
+            i.putExtra("GeofenceError", geofencingEvent.getErrorCode());
+            sendBroadcast(i);
             return;
         }
 
@@ -69,7 +73,6 @@ public class GeofenceTransitionsIntentService extends IntentService{
            Bundle data = new Bundle();
             data.putInt("transition", geofenceTransition);
             data.putStringArrayList("idList", triggeringGeofencesIdsList);
-            Intent i = new Intent(Constants.BROADCAST_GEOFENCE_RESULT);
             i.putExtra("geoBundle",data);
             sendBroadcast(i);
         }catch (Exception e){
