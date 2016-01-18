@@ -1,25 +1,25 @@
 var exec = require('cordova/exec');
 
 module.exports = {
-    config: {},
-
     start: function (config, success, failure) {
         this.config = config;
-        if (!config.background) {
+        if (!config.hasOwnProperty('background')) {
             throw "www - to start location, background flag is set";
         }
         exec(success || function () { },
             failure || function () { },
             'BackgroundGeoLocation',
             'start',
-            [config]);
+            [config]
+            );
     },
     stop: function (config, success, failure) {
         exec(success || function () { },
             failure || function () { },
             'BackgroundGeoLocation',
             'stop',
-            []);
+            []
+            );
     },
     configure: function (config, success, failure) {
         this.config = config;
@@ -35,7 +35,8 @@ module.exports = {
             failure || function () { },
             'BackgroundGeoLocation',
             'getLocation',
-            [true]);
+            [true]
+            );
     },
     echo: function (message, success, failure) {
         var Success = function (str) { console.log(str) };
@@ -45,7 +46,8 @@ module.exports = {
             failure || Failure,
             'BackgroundGeoLocation',
             'echo',
-            [msg]);
+            [msg]
+            );
     },
     // add geofences
     addGeofence: function (config, success, failure) {
@@ -68,7 +70,8 @@ module.exports = {
             failure || function () { },
             'BackgroundGeoLocation',
             'addGeofence',
-            [config]);
+            [config]
+            );
     },
     // remove a geofence
     removeGeofence: function (config, success, failure) {
@@ -79,7 +82,8 @@ module.exports = {
             failure || function () { },
             'BackgroundGeoLocation',
             'removeGeofence',
-            [config]);
+            [config]
+            );
     },
      //remove all geofences registered
     removeallGeofences: function (success, failure) {
@@ -87,7 +91,8 @@ module.exports = {
             failure || function () { },
             'BackgroundGeoLocation',
             'removeAllGeofences',
-            []);
+            []
+            );
     },
      // send a local notification
     notifyAbout: function (config, success, failure) {
@@ -98,7 +103,27 @@ module.exports = {
             failure || function () { },
             'BackgroundGeoLocation',
             'notifyAbout',
-            [config]);
+            [config]
+            );
+     },
+     // get latest location by running gps sync
+     syncLoc: function(config,success, failure){
+         exec(success || function(){},
+         failure || function(){},
+         'BackgroundGeoLocation',
+         'syncLoc',
+         []      
+         );
+     },
+     // to set/change the config
+     setConfig: function(config, success, failure){
+         //TODO: check the config object for acceptable values
+         exec(success || function(){},
+         failure || function(){},
+         'BackgroundGeoLocation',
+         'setConfig',
+         [config]
+         );
      }
 };
 

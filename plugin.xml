@@ -14,7 +14,7 @@
      </js-module>
 	  <!-- android -->
 	 <platform name="android">
-		 <framework src="com.google.android.gms:play-services-location:7.8.0" />
+		 <framework src="com.google.android.gms:play-services-location:7+" />
 		 <source-file src="src/android/GPStracker.java" target-dir="src/com/reku/motobite/cordova" />
 		 <source-file src="src/android/GPStrackerHelper.java" target-dir="src/com/reku/motobite/cordova" />
 		 <source-file src="src/android/Constants.java" target-dir="src/com/reku/motobite/cordova" />
